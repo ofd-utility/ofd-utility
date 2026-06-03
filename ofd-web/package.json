@@ -1,0 +1,17 @@
+{
+  "name": "ofd-web",
+  "version": "1.0.0",
+  "description": "Another project for OFD Reader.",
+  "keywords": [
+    "ofd",
+    "reader",
+    "parser"
+  ],
+  "license": "MIT",
+  "author": "linxray@gmail.com",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
