@@ -46,7 +46,7 @@ use crate::model::graphics::{
     PathObject, TextObject,
 };
 use crate::model::resource::{CtColorSpace, CtDrawParam};
-use crate::types::{parent_dir, resolve_path, StBox, StLoc};
+use crate::types::{parent_dir, resolve_path, StBox, StLoc, StRefId};
 use crate::{LoadedDocument, OfdReader, PageObject, PageRef};
 
 use std::io::{Read, Seek};
@@ -416,7 +416,7 @@ impl<R: Read + Seek> OfdReader<R> {
                 let app_to_device =
                     page_to_device.mul(Mat::translate(app.boundary.x, app.boundary.y));
                 for obj in &app.objects {
-                    render_block(pixmap, res, app_to_device, obj);
+                    render_block(pixmap, res, app_to_device, obj, None);
                 }
             }
         }
@@ -562,24 +562,35 @@ fn render_page_object(
         _ => 1, // Body（默认）
     });
     for layer in layers {
+        // 图层级绘制参数：作为层内所有图元的默认绘制参数（见表 14、表 15）。
+        let layer_dp = resolve_draw_param(res, layer.draw_param);
         for obj in &layer.objects {
-            render_block(pixmap, res, page_to_device, obj);
+            render_block(pixmap, res, page_to_device, obj, layer_dp.as_ref());
         }
     }
 }
 
 /// 渲染单个页块对象（必要时递归进入分组）。
-fn render_block(pixmap: &mut Pixmap, res: &DocResources, page_to_device: Mat, block: &PageBlock) {
+///
+/// `inherited` 为来自图层（或外层分组）的默认绘制参数，供未自带绘制参数的
+/// 图元继承颜色、线宽等属性。
+fn render_block(
+    pixmap: &mut Pixmap,
+    res: &DocResources,
+    page_to_device: Mat,
+    block: &PageBlock,
+    inherited: Option<&CtDrawParam>,
+) {
     match block {
-        PageBlock::Path(p) => render_path(pixmap, res, page_to_device, p),
-        PageBlock::Text(t) => render_text(pixmap, res, page_to_device, t),
+        PageBlock::Path(p) => render_path(pixmap, res, page_to_device, p, inherited),
+        PageBlock::Text(t) => render_text(pixmap, res, page_to_device, t, inherited),
         PageBlock::Image(i) => render_image(pixmap, res, page_to_device, i),
         PageBlock::Block(g) => {
             for obj in &g.objects {
-                render_block(pixmap, res, page_to_device, obj);
+                render_block(pixmap, res, page_to_device, obj, inherited);
             }
         }
-        PageBlock::Composite(c) => render_composite(pixmap, res, page_to_device, c, 0),
+        PageBlock::Composite(c) => render_composite(pixmap, res, page_to_device, c, 0, inherited),
     }
 }
 
@@ -597,6 +608,7 @@ fn render_composite(
     page_to_device: Mat,
     obj: &CompositeObject,
     depth: u32,
+    inherited: Option<&CtDrawParam>,
 ) {
     if depth >= MAX_COMPOSITE_DEPTH {
         return;
@@ -614,7 +626,7 @@ fn render_composite(
         obj.ctm.as_ref().map(|a| a.as_slice()),
     );
     for block in &content.objects {
-        render_block_at_depth(pixmap, res, inner_to_device, block, depth + 1);
+        render_block_at_depth(pixmap, res, inner_to_device, block, depth + 1, inherited);
     }
 }
 
@@ -625,15 +637,16 @@ fn render_block_at_depth(
     page_to_device: Mat,
     block: &PageBlock,
     depth: u32,
+    inherited: Option<&CtDrawParam>,
 ) {
     match block {
-        PageBlock::Composite(c) => render_composite(pixmap, res, page_to_device, c, depth),
+        PageBlock::Composite(c) => render_composite(pixmap, res, page_to_device, c, depth, inherited),
         PageBlock::Block(g) => {
             for obj in &g.objects {
-                render_block_at_depth(pixmap, res, page_to_device, obj, depth);
+                render_block_at_depth(pixmap, res, page_to_device, obj, depth, inherited);
             }
         }
-        _ => render_block(pixmap, res, page_to_device, block),
+        _ => render_block(pixmap, res, page_to_device, block, inherited),
     }
 }
 
@@ -645,8 +658,71 @@ fn object_to_device(page_to_device: Mat, boundary: &StBox, ctm: Option<&[f64]>) 
         .mul(m)
 }
 
+/// 解析图元引用的绘制参数，并沿 `@Relative` 继承链回退合并各属性。
+///
+/// 子绘制参数显式设置的属性优先，未设置的属性逐级回退到父绘制参数（见 8.2、
+/// 表 24）。返回展平后的拷贝，调用方可像访问单个绘制参数一样取用各字段。
+/// 通过记录已访问标识避免循环引用导致的无限递归。
+fn resolve_draw_param(res: &DocResources, id: Option<StRefId>) -> Option<CtDrawParam> {
+    let mut cur = res.draw_params.get(&id?.value())?.clone();
+    let mut visited = vec![cur.id.value()];
+    while let Some(rid) = cur.relative.map(|r| r.value()) {
+        if visited.contains(&rid) {
+            break;
+        }
+        let Some(parent) = res.draw_params.get(&rid) else {
+            break;
+        };
+        visited.push(rid);
+        fill_missing_draw_param(&mut cur, parent);
+        // 沿链继续向上：父参数的 `Relative` 决定下一级。
+        cur.relative = parent.relative;
+    }
+    Some(cur)
+}
+
+/// 将 `dst` 中未显式设置（`None`）的属性回退填充为 `src` 的对应值。
+/// 用于 `@Relative` 继承与图层级绘制参数继承（子优先、父兜底）。
+fn fill_missing_draw_param(dst: &mut CtDrawParam, src: &CtDrawParam) {
+    dst.line_width = dst.line_width.or(src.line_width);
+    dst.join = dst.join.take().or_else(|| src.join.clone());
+    dst.cap = dst.cap.take().or_else(|| src.cap.clone());
+    dst.miter_limit = dst.miter_limit.or(src.miter_limit);
+    dst.dash_offset = dst.dash_offset.or(src.dash_offset);
+    dst.dash_pattern = dst.dash_pattern.take().or_else(|| src.dash_pattern.clone());
+    dst.fill_color = dst.fill_color.take().or_else(|| src.fill_color.clone());
+    dst.stroke_color = dst.stroke_color.take().or_else(|| src.stroke_color.clone());
+}
+
+/// 计算图元实际生效的绘制参数：先解析图元自身引用的绘制参数（含 `@Relative`
+/// 链），再以图层（[`CtLayer`]）继承的绘制参数 `inherited` 作为最低优先级兜底。
+///
+/// 优先级：图元内联属性 > 图元 `DrawParam` 链 > 图层 `DrawParam`（见 8.2、表 14）。
+/// 图元内联属性在各绘制函数中单独优先处理，故此处仅合并后两级。
+fn effective_draw_param(
+    res: &DocResources,
+    id: Option<StRefId>,
+    inherited: Option<&CtDrawParam>,
+) -> Option<CtDrawParam> {
+    match (resolve_draw_param(res, id), inherited) {
+        (Some(mut own), Some(parent)) => {
+            fill_missing_draw_param(&mut own, parent);
+            Some(own)
+        }
+        (Some(own), None) => Some(own),
+        (None, Some(parent)) => Some(parent.clone()),
+        (None, None) => None,
+    }
+}
+
 /// 绘制图形（路径）对象。
-fn render_path(pixmap: &mut Pixmap, res: &DocResources, page_to_device: Mat, obj: &PathObject) {
+fn render_path(
+    pixmap: &mut Pixmap,
+    res: &DocResources,
+    page_to_device: Mat,
+    obj: &PathObject,
+    inherited: Option<&CtDrawParam>,
+) {
     let Some(data) = &obj.abbreviated_data else {
         return;
     };
@@ -654,7 +730,8 @@ fn render_path(pixmap: &mut Pixmap, res: &DocResources, page_to_device: Mat, obj
         return;
     };
     let transform = object_to_device(page_to_device, &obj.boundary, obj.ctm.as_ref().map(|a| a.as_slice())).to_skia();
-    let dp = obj.draw_param.and_then(|id| res.draw_params.get(&id.value()));
+    let dp = effective_draw_param(res, obj.draw_param, inherited);
+    let dp = dp.as_ref();
 
     let fill = obj.fill.unwrap_or(false);
     let stroke = obj.stroke.unwrap_or(true);
@@ -940,7 +1017,13 @@ struct PlacedGlyph {
 /// 字形索引的取得遵循规范 11.4：默认按字型 CMAP 表由字符映射；若文字对象带有
 /// `CGTransform`（字形变换），则在其覆盖的字符区间内改用显式给出的字形索引，
 /// 从而支持一对一、多对一、一对多、多对多等映射关系。
-fn render_text(pixmap: &mut Pixmap, res: &DocResources, page_to_device: Mat, obj: &TextObject) {
+fn render_text(
+    pixmap: &mut Pixmap,
+    res: &DocResources,
+    page_to_device: Mat,
+    obj: &TextObject,
+    inherited: Option<&CtDrawParam>,
+) {
     let Some(font) = res.fonts.get(&obj.font.value()) else {
         return;
     };
@@ -956,7 +1039,8 @@ fn render_text(pixmap: &mut Pixmap, res: &DocResources, page_to_device: Mat, obj
         return;
     }
 
-    let dp = obj.draw_param.and_then(|id| res.draw_params.get(&id.value()));
+    let dp = effective_draw_param(res, obj.draw_param, inherited);
+    let dp = dp.as_ref();
     // 规范表 45：Fill 默认 true、Stroke 默认 false。两者皆否则无需绘制。
     let fill = obj.fill.unwrap_or(true);
     let stroke = obj.stroke.unwrap_or(false);
@@ -1316,6 +1400,108 @@ fn resolve_color(res: &DocResources, color: &CtColor, obj_alpha: Option<u8>) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::graphics::CtColor;
+    use crate::types::StId;
+
+    fn dp(id: u64, relative: Option<u64>) -> CtDrawParam {
+        CtDrawParam {
+            id: StId(id),
+            relative: relative.map(StId),
+            ..Default::default()
+        }
+    }
+
+    fn color(component: f64) -> CtColor {
+        CtColor { value: Some(StArray(vec![component])), ..Default::default() }
+    }
+
+    fn resources_with(params: Vec<CtDrawParam>) -> DocResources {
+        let mut res = DocResources::default();
+        for p in params {
+            res.draw_params.insert(p.id.value(), p);
+        }
+        res
+    }
+
+    /// 测试辅助：按标识解析展平后的绘制参数。
+    fn resolve_for(res: &DocResources, id: u64) -> CtDrawParam {
+        resolve_draw_param(res, Some(StRefId(id))).expect("draw param exists")
+    }
+
+    /// 8.2 表 24：子绘制参数未显式设置的属性应沿 `@Relative` 链回退到父参数，
+    /// 而子参数已设置的属性优先保留。
+    #[test]
+    fn draw_param_inherits_missing_attrs_via_relative() {
+        // 父：定义填充色与线宽；子：仅覆盖勾边色，引用父。
+        let mut parent = dp(1, None);
+        parent.fill_color = Some(color(0.5));
+        parent.line_width = Some(2.0);
+        let mut child = dp(2, Some(1));
+        child.stroke_color = Some(color(0.9));
+
+        let res = resources_with(vec![parent, child]);
+        let flat = resolve_for(&res, 2);
+        // 子未设置填充色/线宽：回退父值；勾边色保留子值。
+        assert!(flat.fill_color.is_some());
+        assert_eq!(flat.line_width, Some(2.0));
+        assert!(flat.stroke_color.is_some());
+    }
+
+    /// 多级链 3→2→1：属性应跨越中间节点回退到最远祖先。
+    #[test]
+    fn draw_param_inherits_across_multiple_levels() {
+        let mut grandparent = dp(1, None);
+        grandparent.fill_color = Some(color(0.5));
+        let parent = dp(2, Some(1));
+        let parent_id = parent.id.value();
+        assert_eq!(parent_id, 2);
+        let child = dp(3, Some(2));
+
+        let res = resources_with(vec![grandparent, parent, child]);
+        let flat = resolve_for(&res, 3);
+        assert!(flat.fill_color.is_some());
+    }
+
+    /// 循环引用（2→1→2）不应导致无限递归。
+    #[test]
+    fn draw_param_relative_cycle_terminates() {
+        let res = resources_with(vec![dp(1, Some(2)), dp(2, Some(1))]);
+        let flat = resolve_for(&res, 2);
+        assert_eq!(flat.id.value(), 2);
+    }
+
+    /// 表 14：图元未引用绘制参数时，应继承图层（`inherited`）的填充色。
+    /// 复现票样中“文字落在 DrawParam=4 的图层、自身不带颜色”导致渲染成黑色的缺陷。
+    #[test]
+    fn effective_draw_param_falls_back_to_layer() {
+        let mut layer = dp(4, None);
+        layer.fill_color = Some(color(0.6));
+        let res = resources_with(vec![layer.clone()]);
+
+        // 图元无自身绘制参数：应取图层填充色。
+        let eff = effective_draw_param(&res, None, Some(&layer)).expect("inherited param");
+        assert!(eff.fill_color.is_some());
+    }
+
+    /// 图元自身绘制参数优先于图层绘制参数（子覆盖父）。
+    #[test]
+    fn effective_draw_param_object_overrides_layer() {
+        let mut layer = dp(4, None);
+        layer.fill_color = Some(color(0.6));
+        let mut own = dp(2, None);
+        own.fill_color = Some(color(0.1));
+        own.line_width = None; // 线宽未设置：应回退图层。
+        let mut layer_with_lw = layer.clone();
+        layer_with_lw.line_width = Some(3.0);
+
+        let res = resources_with(vec![own.clone(), layer_with_lw.clone()]);
+        let eff =
+            effective_draw_param(&res, Some(StRefId(2)), Some(&layer_with_lw)).expect("param");
+        // 填充色取图元自身（0.1）而非图层（0.6）。
+        assert_eq!(eff.fill_color.as_ref().and_then(|c| c.value.as_ref()).map(|v| v.as_slice()[0]), Some(0.1));
+        // 线宽图元未设置：回退图层值。
+        assert_eq!(eff.line_width, Some(3.0));
+    }
 
     /// 紧缩数据中的 `A` 应绘制真正的椭圆弧而非直线弦：半圆弧的包围盒
     /// 必须向弦的一侧鼓出约一个半径，且 `SweepDirection` 决定鼓出方向
