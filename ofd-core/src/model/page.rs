@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::common::Actions;
 use crate::model::document::CtPageArea;
+use crate::model::graphics::PageBlock;
 use crate::types::{StId, StLoc, StRefId};
 
 /// 页树（见表 11）。
@@ -84,8 +85,9 @@ pub struct Content {
 
 /// `CT_Layer`：图层（见表 14、表 15）。
 ///
-/// 图层内部的图元对象（文字/图形/图像/复合对象）属于页面描述（第 8 章起），
-/// 不在基础结构范围内，故此处未建模。
+/// 图层内部的图元对象（文字/图形/图像/复合对象，见 [`PageBlock`]）属于页面
+/// 描述（第 8 章起）；它们按出现顺序保存在 [`objects`](CtLayer::objects) 中，
+/// 供 [`crate::render`] 渲染器按叠放次序绘制。
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct CtLayer {
     /// 图层标识。
@@ -97,6 +99,9 @@ pub struct CtLayer {
     /// 图层的绘制参数，引用资源文件中定义的绘制参数标识（可选）。
     #[serde(rename = "@DrawParam")]
     pub draw_param: Option<StRefId>,
+    /// 图层内的页面图元对象，按文档顺序排列。
+    #[serde(rename = "$value", default)]
+    pub objects: Vec<PageBlock>,
 }
 
 /// `CT_TemplatePage`：模板页（见表 13）。

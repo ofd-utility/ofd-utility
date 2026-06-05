@@ -29,6 +29,7 @@
 pub mod error;
 pub mod model;
 pub mod package;
+pub mod render;
 pub mod types;
 
 use std::fs::File;
@@ -38,6 +39,7 @@ use std::path::Path;
 pub use error::{OfdError, Result};
 pub use model::*;
 pub use package::OfdPackage;
+pub use render::RenderOptions;
 pub use types::{
     parent_dir, resolve_path, StArray, StBox, StId, StLoc, StPos, StRefId,
 };

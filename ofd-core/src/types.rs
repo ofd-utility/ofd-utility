@@ -6,6 +6,7 @@
 //! 并据此实现 serde 的反序列化与序列化。
 
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
@@ -109,14 +110,7 @@ impl FromStr for StId {
     type Err = OfdError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.trim()
-            .parse::<u64>()
-            .map(StId)
-            .map_err(|e| OfdError::BasicType {
-                ty: "ST_ID",
-                value: s.to_string(),
-                reason: e.to_string(),
-            })
+        Ok(StId(parse_id_u64(s)))
     }
 }
 
@@ -148,14 +142,26 @@ impl FromStr for StRefId {
     type Err = OfdError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.trim()
-            .parse::<u64>()
-            .map(StRefId)
-            .map_err(|e| OfdError::BasicType {
-                ty: "ST_RefID",
-                value: s.to_string(),
-                reason: e.to_string(),
-            })
+        Ok(StRefId(parse_id_u64(s)))
+    }
+}
+
+/// 将标识字符串解析为 `u64`。
+///
+/// 规范要求 `ST_ID`/`ST_RefID` 为无符号整数，但部分生产工具会写出非整数标识
+/// （如 `"999ewm"`）。为避免整篇文档因个别非法标识而解析失败，这里对非整数值
+/// 回退为该字符串的稳定哈希：同一文档内的定义与引用使用相同字面量，哈希一致，
+/// 仍能正确匹配。哈希值最高位置 1，使其落在 `[2^63, 2^64)`，远离真实的小整数
+/// 标识，几乎不会发生碰撞。
+fn parse_id_u64(s: &str) -> u64 {
+    let trimmed = s.trim();
+    match trimmed.parse::<u64>() {
+        Ok(v) => v,
+        Err(_) => {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            trimmed.hash(&mut hasher);
+            hasher.finish() | (1 << 63)
+        }
     }
 }
 
@@ -405,6 +411,20 @@ mod tests {
     fn id_validity() {
         assert!(!StId::INVALID.is_valid());
         assert!(StId(1000).is_valid());
+    }
+
+    #[test]
+    fn non_numeric_id_falls_back_to_hash() {
+        // 合法整数照常解析。
+        assert_eq!("55001".parse::<StId>().unwrap().value(), 55001);
+        // 非整数标识不再报错，而是回退为稳定哈希且高位置位。
+        let a = "999ewm".parse::<StId>().unwrap();
+        assert!(a.value() >= 1 << 63, "hashed id should occupy high range");
+        // 同一字面量解析一致，保证定义与引用可匹配。
+        let b: StRefId = "999ewm".parse().unwrap();
+        assert_eq!(a.value(), b.value());
+        // 不同字面量得到不同标识。
+        assert_ne!(a.value(), "998ewm".parse::<StId>().unwrap().value());
     }
 
     #[test]

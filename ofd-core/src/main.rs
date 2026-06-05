@@ -1,10 +1,44 @@
-//! `ofd-core` 演示命令行：解析一个 OFD 文件并打印其基础结构信息。
+//! `ofd-core` 演示命令行：解析一个 OFD 文件并打印其基础结构信息，
+//! 或将其页面渲染为图片。
 
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use clap::{Parser, Subcommand};
+use ofd_core::render::{image_format_from_ext, RenderOptions};
 use ofd_core::{OfdReader, Result};
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
+
+/// OFD 文件解析与渲染命令行工具。
+#[derive(Parser)]
+#[command(name = "ofd-core", version, about, long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// 解析 OFD 文件并打印其基础结构信息。
+    Dump {
+        /// 待解析的 OFD 文件路径。
+        file: PathBuf,
+    },
+    /// 将 OFD 各页渲染为图片输出到指定目录。
+    Render {
+        /// 待渲染的 OFD 文件路径。
+        file: PathBuf,
+        /// 图片输出目录（不存在时自动创建）。
+        out_dir: PathBuf,
+        /// 渲染分辨率（每英寸点数）。
+        #[arg(long, default_value_t = 150.0)]
+        dpi: f64,
+        /// 输出图片格式。
+        #[arg(long, default_value = "png", value_parser = ["png", "jpg", "jpeg", "bmp", "tiff", "gif", "webp"])]
+        format: String,
+    },
+}
 
 fn main() -> ExitCode {
     // 默认输出 INFO 级别，可通过 RUST_LOG 覆盖；报告内容偏正文，去掉时间戳与 target。
@@ -16,27 +50,61 @@ fn main() -> ExitCode {
         .with_target(false)
         .init();
 
-    let mut args = std::env::args().skip(1);
-    let Some(path) = args.next() else {
-        error!("用法: ofd-core <文件.ofd>");
-        return ExitCode::FAILURE;
+    let cli = Cli::parse();
+    let result = match cli.command {
+        Command::Dump { file } => dump(&file),
+        Command::Render {
+            file,
+            out_dir,
+            dpi,
+            format,
+        } => render_cmd(&file, &out_dir, dpi, &format),
     };
 
-    match dump(&path) {
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            error!("解析失败: {e}");
+            error!("失败: {e}");
             ExitCode::FAILURE
         }
     }
 }
 
-fn dump(path: &str) -> Result<()> {
+/// `render` 子命令：将 OFD 各页渲染为图片输出到指定目录。
+fn render_cmd(path: &Path, out_dir: &Path, dpi: f64, format: &str) -> Result<()> {
+    if image_format_from_ext(format).is_none() {
+        return Err(ofd_core::OfdError::Render(format!("不支持的图片格式: {format}")));
+    }
+
+    std::fs::create_dir_all(out_dir)?;
+    let opts = RenderOptions::with_dpi(dpi);
+
+    let mut reader = OfdReader::open(path)?;
+    let bodies = reader.ofd().doc_bodies.clone();
+    let mut total = 0usize;
+    for (di, body) in bodies.iter().enumerate() {
+        if body.doc_root.is_none() {
+            continue;
+        }
+        let doc = reader.load_document(body)?;
+        let page_count = doc.pages().len();
+        for pi in 0..page_count {
+            let out = out_dir.join(format!("doc{di}_page{pi}.{format}"));
+            reader.render_page_to_file(&doc, pi, &opts, &out)?;
+            info!("已渲染: {}", out.display());
+            total += 1;
+        }
+    }
+    info!("完成，共 {total} 页，DPI={dpi}，格式={format}");
+    Ok(())
+}
+
+fn dump(path: &Path) -> Result<()> {
     let mut reader = OfdReader::open(path)?;
     let ofd = reader.ofd();
 
     // —— OFD.xml 主入口全部内容 ——
-    info!("OFD 主入口 ({path})");
+    info!("OFD 主入口 ({})", path.display());
     info!("  Version={}  DocType={}{}", ofd.version, ofd.doc_type,
         if ofd.is_archive() { " (存档规范)" } else { "" });
     info!("  DocBody 数: {}", ofd.doc_bodies.len());

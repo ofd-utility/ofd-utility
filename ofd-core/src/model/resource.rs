@@ -10,7 +10,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::types::{StId, StLoc};
+use crate::model::graphics::{CtColor, CtVectorG};
+use crate::types::{StArray, StId, StLoc};
 
 /// `Res`：资源文件根节点（见表 18）。
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -20,12 +21,100 @@ pub struct Res {
     /// 资源文件中各数据文件的默认存储位置以此为基准。
     #[serde(rename = "@BaseLoc")]
     pub base_loc: StLoc,
+    /// 颜色空间资源组（可选）。
+    #[serde(rename = "ColorSpaces")]
+    pub color_spaces: Option<ColorSpaces>,
+    /// 绘制参数资源组（可选）。
+    #[serde(rename = "DrawParams")]
+    pub draw_params: Option<DrawParams>,
     /// 字型资源组（可选）。
     #[serde(rename = "Fonts")]
     pub fonts: Option<Fonts>,
     /// 多媒体资源组（可选）。
     #[serde(rename = "MultiMedias")]
     pub multi_medias: Option<MultiMedias>,
+    /// 矢量图像（复合图形单元）资源组（可选）。
+    #[serde(rename = "CompositeGraphicUnits")]
+    pub composite_graphic_units: Option<CompositeGraphicUnits>,
+}
+
+/// 一组矢量图像（复合图形单元）资源的描述（见表 18、表 49）。
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct CompositeGraphicUnits {
+    /// 矢量图像列表，被页面中的复合对象（`CompositeObject`）按 `ResourceID` 引用。
+    #[serde(rename = "CompositeGraphicUnit", default)]
+    pub units: Vec<CtVectorG>,
+}
+
+/// 一组颜色空间资源的描述（见表 18）。
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct ColorSpaces {
+    /// 颜色空间列表。
+    #[serde(rename = "ColorSpace", default)]
+    pub color_spaces: Vec<CtColorSpace>,
+}
+
+/// `CT_ColorSpace`：颜色空间（见 8.3.1、表 28）。
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct CtColorSpace {
+    /// 资源标识（必选）。
+    #[serde(rename = "@ID")]
+    pub id: StId,
+    /// 颜色空间类型：`Gray`/`RGB`/`CMYK`（必选）。
+    #[serde(rename = "@Type")]
+    pub cs_type: String,
+    /// 每个颜色分量的位数，取值 1/2/4/8/16，默认 8（可选）。
+    #[serde(rename = "@BitsPerComponent")]
+    pub bits_per_component: Option<u32>,
+    /// 调色板所在文件（可选）。
+    #[serde(rename = "@Profile")]
+    pub profile: Option<StLoc>,
+}
+
+/// 一组绘制参数资源的描述（见表 18）。
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct DrawParams {
+    /// 绘制参数列表。
+    #[serde(rename = "DrawParam", default)]
+    pub draw_params: Vec<CtDrawParam>,
+}
+
+/// `CT_DrawParam`：绘制参数（见 8.2、表 24）。
+///
+/// 绘制参数可通过 `Relative` 继承另一绘制参数；图元未显式声明的颜色、线宽
+/// 等属性将回退到其引用的绘制参数。
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct CtDrawParam {
+    /// 资源标识（必选）。
+    #[serde(rename = "@ID")]
+    pub id: StId,
+    /// 基础绘制参数标识，本参数在其基础上覆盖（可选）。
+    #[serde(rename = "@Relative")]
+    pub relative: Option<StId>,
+    /// 线宽，单位为毫米，默认 0.353（可选）。
+    #[serde(rename = "@LineWidth")]
+    pub line_width: Option<f64>,
+    /// 线条连接样式（可选）。
+    #[serde(rename = "@Join")]
+    pub join: Option<String>,
+    /// 线条端点样式（可选）。
+    #[serde(rename = "@Cap")]
+    pub cap: Option<String>,
+    /// 斜接限制（可选）。
+    #[serde(rename = "@MiterLimit")]
+    pub miter_limit: Option<f64>,
+    /// 虚线起始相位（可选）。
+    #[serde(rename = "@DashOffset")]
+    pub dash_offset: Option<f64>,
+    /// 虚线重复样式（可选）。
+    #[serde(rename = "@DashPattern")]
+    pub dash_pattern: Option<StArray<f64>>,
+    /// 填充颜色（可选）。
+    #[serde(rename = "FillColor")]
+    pub fill_color: Option<CtColor>,
+    /// 勾边颜色（可选）。
+    #[serde(rename = "StrokeColor")]
+    pub stroke_color: Option<CtColor>,
 }
 
 /// 一组字型资源的描述（见表 18）。

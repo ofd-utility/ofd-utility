@@ -35,6 +35,14 @@ pub enum OfdError {
     /// 文档结构不符合规范要求。
     #[error("invalid OFD structure: {0}")]
     Structure(String),
+
+    /// 图片编解码错误（见 [`crate::render`]）。
+    #[error("image codec error: {0}")]
+    Image(#[from] image::ImageError),
+
+    /// 渲染过程中的错误（见 [`crate::render`]）。
+    #[error("render error: {0}")]
+    Render(String),
 }
 
 /// 本 crate 的统一 `Result` 别名。

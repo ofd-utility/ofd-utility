@@ -7,17 +7,27 @@
 //! - [`resource`]：资源文件（7.9）；
 //! - [`common`]：被多处引用的公共结构。
 
+pub mod annotation;
 pub mod common;
 pub mod document;
+pub mod graphics;
 pub mod ofd;
 pub mod page;
 pub mod resource;
 
+pub use annotation::{Annot, AnnotPageRef, Annotations, Appearance, PageAnnot};
 pub use common::{Actions, CtAction, CtDest, Version, Versions};
+pub use graphics::{
+    parse_deltas, CompositeObject, CtColor, CtVectorG, ImageObject, PageBlock, PageBlockGroup,
+    PathObject, TextCode, TextObject,
+};
 pub use document::{
     Bookmarks, CommonData, CtBookmark, CtOutlineElem, CtPageArea, CtPermission, Document, Outlines,
     Print, ValidPeriod, VPreferences,
 };
 pub use ofd::{CtDocInfo, CustomData, CustomDatas, DocBody, Keywords, Ofd};
 pub use page::{Content, CtLayer, CtTemplatePage, PageObject, PageRef, Pages, Template};
-pub use resource::{CtFont, CtMultiMedia, Fonts, MultiMedias, Res};
+pub use resource::{
+    ColorSpaces, CompositeGraphicUnits, CtColorSpace, CtDrawParam, CtFont, CtMultiMedia, DrawParams,
+    Fonts, MultiMedias, Res,
+};
