@@ -501,53 +501,43 @@ impl<R: Read + Seek> OfdReader<R> {
         let res_dir = parent_dir(&res_path).to_string();
         let data_base = resolve_path(&res_dir, &parsed.base_loc);
 
-        if let Some(spaces) = &parsed.color_spaces {
-            for cs in &spaces.color_spaces {
-                res.color_spaces.insert(cs.id.value(), cs.clone());
-            }
+        for cs in parsed.color_spaces() {
+            res.color_spaces.insert(cs.id.value(), cs.clone());
         }
-        if let Some(dps) = &parsed.draw_params {
-            for dp in &dps.draw_params {
-                res.draw_params.insert(dp.id.value(), dp.clone());
-            }
+        for dp in parsed.draw_params() {
+            res.draw_params.insert(dp.id.value(), dp.clone());
         }
-        if let Some(fonts) = &parsed.fonts {
-            for font in &fonts.fonts {
-                let embedded = font
-                    .font_file
-                    .as_ref()
-                    .map(|ff| resolve_path(&data_base, ff))
-                    .and_then(|p| self.package.read(&p).ok());
-                let res_font = match embedded {
-                    Some(data) => FontRes { data: Some(data), index: 0 },
-                    // 未内嵌字型：回退到同名系统字体，避免文字整体缺失。
-                    None => {
-                        let (data, index) = lookup_system_font(
-                            &font.font_name,
-                            font.family_name.as_deref().unwrap_or(""),
-                            font.bold.unwrap_or(false),
-                            font.italic.unwrap_or(false),
-                        )
-                        .map(|(d, i)| (Some(d), i))
-                        .unwrap_or((None, 0));
-                        FontRes { data, index }
-                    }
-                };
-                res.fonts.insert(font.id.value(), res_font);
-            }
-        }
-        if let Some(media) = &parsed.multi_medias {
-            for mm in &media.multi_medias {
-                let p = resolve_path(&data_base, &mm.media_file);
-                if let Ok(bytes) = self.package.read(&p) {
-                    res.media.insert(mm.id.value(), bytes);
+        for font in parsed.fonts() {
+            let embedded = font
+                .font_file
+                .as_ref()
+                .map(|ff| resolve_path(&data_base, ff))
+                .and_then(|p| self.package.read(&p).ok());
+            let res_font = match embedded {
+                Some(data) => FontRes { data: Some(data), index: 0 },
+                // 未内嵌字型：回退到同名系统字体，避免文字整体缺失。
+                None => {
+                    let (data, index) = lookup_system_font(
+                        &font.font_name,
+                        font.family_name.as_deref().unwrap_or(""),
+                        font.bold.unwrap_or(false),
+                        font.italic.unwrap_or(false),
+                    )
+                    .map(|(d, i)| (Some(d), i))
+                    .unwrap_or((None, 0));
+                    FontRes { data, index }
                 }
+            };
+            res.fonts.insert(font.id.value(), res_font);
+        }
+        for mm in parsed.multi_medias() {
+            let p = resolve_path(&data_base, &mm.media_file);
+            if let Ok(bytes) = self.package.read(&p) {
+                res.media.insert(mm.id.value(), bytes);
             }
         }
-        if let Some(units) = &parsed.composite_graphic_units {
-            for vg in &units.units {
-                res.vector_gs.insert(vg.id.value(), vg.clone());
-            }
+        for vg in parsed.composite_graphic_units() {
+            res.vector_gs.insert(vg.id.value(), vg.clone());
         }
     }
 }

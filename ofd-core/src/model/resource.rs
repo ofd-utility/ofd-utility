@@ -14,6 +14,11 @@ use crate::model::graphics::{CtColor, CtVectorG};
 use crate::types::{StArray, StId, StLoc};
 
 /// `Res`：资源文件根节点（见表 18）。
+///
+/// 规范中 `Res` 的内容为一个可重复、无序的选择（`xs:choice maxOccurs="unbounded"`），
+/// 即各资源组（如 `MultiMedias`）允许出现多次且可与其他组交错。故这里以保留文档
+/// 顺序的子节点序列 [`children`](Res::children) 建模，并提供 [`Res::fonts`] 等便捷
+/// 方法跨组扁平化遍历其中的资源项。
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Res {
     /// 定义此资源文件的通用数据存储路径（必选）。
@@ -21,21 +26,81 @@ pub struct Res {
     /// 资源文件中各数据文件的默认存储位置以此为基准。
     #[serde(rename = "@BaseLoc")]
     pub base_loc: StLoc,
-    /// 颜色空间资源组（可选）。
-    #[serde(rename = "ColorSpaces")]
-    pub color_spaces: Option<ColorSpaces>,
-    /// 绘制参数资源组（可选）。
-    #[serde(rename = "DrawParams")]
-    pub draw_params: Option<DrawParams>,
-    /// 字型资源组（可选）。
-    #[serde(rename = "Fonts")]
-    pub fonts: Option<Fonts>,
-    /// 多媒体资源组（可选）。
-    #[serde(rename = "MultiMedias")]
-    pub multi_medias: Option<MultiMedias>,
-    /// 矢量图像（复合图形单元）资源组（可选）。
-    #[serde(rename = "CompositeGraphicUnits")]
-    pub composite_graphic_units: Option<CompositeGraphicUnits>,
+    /// 资源组子节点，按在文档中出现的顺序保留（可重复、可交错）。
+    #[serde(rename = "$value", default)]
+    pub children: Vec<ResChild>,
+}
+
+/// `Res` 的一个资源组子节点（见表 18 的无序选择内容）。
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub enum ResChild {
+    /// 颜色空间资源组。
+    ColorSpaces(ColorSpaces),
+    /// 绘制参数资源组。
+    DrawParams(DrawParams),
+    /// 字型资源组。
+    Fonts(Fonts),
+    /// 多媒体资源组。
+    MultiMedias(MultiMedias),
+    /// 矢量图像（复合图形单元）资源组。
+    CompositeGraphicUnits(CompositeGraphicUnits),
+}
+
+impl Res {
+    /// 跨所有 `ColorSpaces` 组遍历颜色空间资源。
+    pub fn color_spaces(&self) -> impl Iterator<Item = &CtColorSpace> {
+        self.children
+            .iter()
+            .filter_map(|c| match c {
+                ResChild::ColorSpaces(g) => Some(g),
+                _ => None,
+            })
+            .flat_map(|g| g.color_spaces.iter())
+    }
+
+    /// 跨所有 `DrawParams` 组遍历绘制参数资源。
+    pub fn draw_params(&self) -> impl Iterator<Item = &CtDrawParam> {
+        self.children
+            .iter()
+            .filter_map(|c| match c {
+                ResChild::DrawParams(g) => Some(g),
+                _ => None,
+            })
+            .flat_map(|g| g.draw_params.iter())
+    }
+
+    /// 跨所有 `Fonts` 组遍历字型资源。
+    pub fn fonts(&self) -> impl Iterator<Item = &CtFont> {
+        self.children
+            .iter()
+            .filter_map(|c| match c {
+                ResChild::Fonts(g) => Some(g),
+                _ => None,
+            })
+            .flat_map(|g| g.fonts.iter())
+    }
+
+    /// 跨所有 `MultiMedias` 组遍历多媒体资源。
+    pub fn multi_medias(&self) -> impl Iterator<Item = &CtMultiMedia> {
+        self.children
+            .iter()
+            .filter_map(|c| match c {
+                ResChild::MultiMedias(g) => Some(g),
+                _ => None,
+            })
+            .flat_map(|g| g.multi_medias.iter())
+    }
+
+    /// 跨所有 `CompositeGraphicUnits` 组遍历矢量图像资源。
+    pub fn composite_graphic_units(&self) -> impl Iterator<Item = &CtVectorG> {
+        self.children
+            .iter()
+            .filter_map(|c| match c {
+                ResChild::CompositeGraphicUnits(g) => Some(g),
+                _ => None,
+            })
+            .flat_map(|g| g.units.iter())
+    }
 }
 
 /// 一组矢量图像（复合图形单元）资源的描述（见表 18、表 49）。

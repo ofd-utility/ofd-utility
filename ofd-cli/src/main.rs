@@ -6,8 +6,9 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use ofd_core::render::{image_format_from_ext, RenderOptions};
+use ofd_core::verify::{check_path, RefStatus, SigVerdict};
 use ofd_core::{OfdReader, Result};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
 /// OFD 文件解析与渲染命令行工具。
@@ -24,6 +25,12 @@ enum Command {
     Info {
         /// 待解析的 OFD 文件路径。
         file: PathBuf,
+    },
+    /// 校验一个或多个 OFD 文件是否符合规范（含数字签名完整性），并列出不合规文件。
+    Check {
+        /// 待校验的 OFD 文件路径（可指定多个）。
+        #[arg(required = true)]
+        files: Vec<PathBuf>,
     },
     /// 将 OFD 各页渲染为图片输出到指定目录。
     Render {
@@ -56,6 +63,7 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
         Command::Info { file } => info_cmd(&file),
+        Command::Check { files } => return check_cmd(&files),
         Command::Render {
             file,
             out_dir,
@@ -71,6 +79,71 @@ fn main() -> ExitCode {
             error!("失败: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+/// `check` 子命令：校验一个或多个 OFD 文件是否符合规范，并在末尾列出不合规文件。
+///
+/// 校验内容包括结构符合性（主入口、文档根节点、页/模板/资源能否定位解析）与
+/// 数字签名完整性（重算被保护文件摘要并与签名记录比对）。只要存在任一不合规
+/// 文件，进程以非零状态退出。
+fn check_cmd(files: &[PathBuf]) -> ExitCode {
+    let mut failed: Vec<&PathBuf> = Vec::new();
+
+    for file in files {
+        let report = check_path(file);
+
+        // 结构问题逐条列出。
+        for problem in &report.problems {
+            warn!("  ✗ {problem}");
+        }
+
+        // 各签名的完整性校验结果。
+        for sig in &report.signatures {
+            match sig.verdict() {
+                SigVerdict::Valid => info!(
+                    "  ✓ 签名 #{} ({}) 完整性校验通过，{} 个文件",
+                    sig.id,
+                    sig.sig_type,
+                    sig.references.len()
+                ),
+                SigVerdict::Unverified => warn!(
+                    "  ? 签名 #{} ({}) 无法校验：摘要算法 {:?} 不受支持",
+                    sig.id, sig.sig_type, sig.method
+                ),
+                SigVerdict::Invalid => {
+                    warn!("  ✗ 签名 #{} ({}) 完整性校验失败:", sig.id, sig.sig_type);
+                    for f in sig.failures() {
+                        match &f.status {
+                            RefStatus::Missing => warn!("      缺失文件: {}", f.file_ref),
+                            RefStatus::Mismatch { .. } => {
+                                warn!("      被篡改: {}", f.file_ref)
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+
+        if report.conforms() {
+            info!("[通过] {}", file.display());
+        } else {
+            error!("[失败] {}", file.display());
+            failed.push(file);
+        }
+    }
+
+    // 汇总：列出不合规文件清单。
+    if failed.is_empty() {
+        info!("全部 {} 个文件均符合规范", files.len());
+        ExitCode::SUCCESS
+    } else {
+        error!("不符合规范的文件（{}/{}）:", failed.len(), files.len());
+        for file in &failed {
+            error!("  {}", file.display());
+        }
+        ExitCode::FAILURE
     }
 }
 

@@ -14,6 +14,7 @@ pub mod graphics;
 pub mod ofd;
 pub mod page;
 pub mod resource;
+pub mod signature;
 
 pub use annotation::{Annot, AnnotPageRef, Annotations, Appearance, PageAnnot};
 pub use common::{Actions, CtAction, CtDest, Version, Versions};
@@ -29,5 +30,9 @@ pub use ofd::{CtDocInfo, CustomData, CustomDatas, DocBody, Keywords, Ofd};
 pub use page::{Content, CtLayer, CtTemplatePage, PageObject, PageRef, Pages, Template};
 pub use resource::{
     ColorSpaces, CompositeGraphicUnits, CtColorSpace, CtDrawParam, CtFont, CtMultiMedia, DrawParams,
-    Fonts, MultiMedias, Res,
+    Fonts, MultiMedias, Res, ResChild,
+};
+pub use signature::{
+    Provider, Reference, References, Seal, Signature, SignatureRef, Signatures, SignedInfo,
+    StampAnnot,
 };

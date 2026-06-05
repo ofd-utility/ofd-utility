@@ -26,11 +26,13 @@
 //! # Ok::<(), ofd_core::OfdError>(())
 //! ```
 
+pub mod crypto;
 pub mod error;
 pub mod model;
 pub mod package;
 pub mod render;
 pub mod types;
+pub mod verify;
 
 use std::fs::File;
 use std::io::{Read, Seek};
@@ -40,6 +42,10 @@ pub use error::{OfdError, Result};
 pub use model::*;
 pub use package::OfdPackage;
 pub use render::RenderOptions;
+pub use verify::{
+    check_path, check_reader, CheckMethod, CheckReport, LoadedSignature, RefStatus, SigVerdict,
+    SignatureReport,
+};
 pub use types::{
     parent_dir, resolve_path, StArray, StBox, StId, StLoc, StPos, StRefId,
 };

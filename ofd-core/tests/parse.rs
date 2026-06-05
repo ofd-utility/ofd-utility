@@ -2,7 +2,9 @@
 
 use std::io::{Cursor, Write};
 
+use ofd_core::crypto::{base64_encode, sm3};
 use ofd_core::render::RenderOptions;
+use ofd_core::verify::{check_reader, SigVerdict};
 use ofd_core::{OfdPackage, OfdReader};
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
@@ -182,10 +184,10 @@ fn parse_resource() {
     let loc = doc.public_res()[0].clone();
     let res = reader.load_resource(&doc, &loc).unwrap();
     assert_eq!(res.base_loc.as_str(), "Res");
-    let fonts = res.fonts.as_ref().unwrap();
-    assert_eq!(fonts.fonts.len(), 1);
-    assert_eq!(fonts.fonts[0].font_name, "宋体");
-    assert_eq!(fonts.fonts[0].id.value(), 20);
+    let fonts: Vec<_> = res.fonts().collect();
+    assert_eq!(fonts.len(), 1);
+    assert_eq!(fonts[0].font_name, "宋体");
+    assert_eq!(fonts[0].id.value(), 20);
 }
 
 /// 注释（如电子印章）应叠加渲染在页面内容之上。
@@ -360,4 +362,85 @@ fn render_page_to_pixmap() {
         .render_page_to_bytes(&doc, 0, &opts, ofd_core::render::ImageFormat::Png)
         .unwrap();
     assert!(png.len() > 8 && &png[1..4] == b"PNG");
+}
+
+/// 数字签名完整性校验（见第 18 章）：构造带签名的包，`CheckValue` 取自被保护
+/// 文件的真实 SM3 摘要，校验应判定为通过；篡改任一被保护文件后应判定为失败。
+#[test]
+fn verify_signature_integrity() {
+    // 声明了 Signatures 的主入口。
+    const OFD_SIGNED_XML: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<ofd:OFD xmlns:ofd="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD">
+  <ofd:DocBody>
+    <ofd:DocInfo><ofd:DocID>9f3c0e1a2b3c4d5e6f7a8b9c0d1e2f30</ofd:DocID></ofd:DocInfo>
+    <ofd:DocRoot>Doc_0/Document.xml</ofd:DocRoot>
+    <ofd:Signatures>Doc_0/Signs/Signatures.xml</ofd:Signatures>
+  </ofd:DocBody>
+</ofd:OFD>"#;
+
+    const SIGNATURES_XML: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<ofd:Signatures xmlns:ofd="http://www.ofdspec.org/2016">
+  <ofd:MaxSignId>1</ofd:MaxSignId>
+  <ofd:Signature ID="1" Type="Sign" BaseLoc="/Doc_0/Signs/Sign_0/Signature.xml"/>
+</ofd:Signatures>"#;
+
+    // 被保护文件的 CheckValue = base64(sm3(bytes))，按真实字节计算。
+    let cv_ofd = base64_encode(&sm3(OFD_SIGNED_XML.as_bytes()));
+    let cv_doc = base64_encode(&sm3(DOCUMENT_XML.as_bytes()));
+    let signature_xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<ofd:Signature xmlns:ofd="http://www.ofdspec.org/2016">
+  <ofd:SignedInfo>
+    <ofd:Provider ProviderName="test"/>
+    <ofd:SignatureMethod>1.2.156.10197.1.501</ofd:SignatureMethod>
+    <ofd:References CheckMethod="1.2.156.10197.1.401">
+      <ofd:Reference FileRef="/OFD.xml"><ofd:CheckValue>{cv_ofd}</ofd:CheckValue></ofd:Reference>
+      <ofd:Reference FileRef="/Doc_0/Document.xml"><ofd:CheckValue>{cv_doc}</ofd:CheckValue></ofd:Reference>
+    </ofd:References>
+  </ofd:SignedInfo>
+  <ofd:SignedValue>/Doc_0/Signs/Sign_0/SignedValue.dat</ofd:SignedValue>
+</ofd:Signature>"#
+    );
+
+    let build = |document_xml: &str| -> Vec<u8> {
+        let mut buf = Vec::new();
+        {
+            let mut zip = ZipWriter::new(Cursor::new(&mut buf));
+            let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+            let files = [
+                ("OFD.xml", OFD_SIGNED_XML),
+                ("Doc_0/Document.xml", document_xml),
+                ("Doc_0/Pages/Page_0/Content.xml", PAGE0_XML),
+                ("Doc_0/Pages/Page_1/Content.xml", PAGE1_XML),
+                ("Doc_0/Tpls/Tpl_0/Content.xml", PAGE1_XML),
+                ("Doc_0/PublicRes.xml", PUBLIC_RES_XML),
+                ("Doc_0/Signs/Signatures.xml", SIGNATURES_XML),
+                ("Doc_0/Signs/Sign_0/Signature.xml", signature_xml.as_str()),
+                ("Doc_0/Signs/Sign_0/SignedValue.dat", "dummy"),
+            ];
+            for (name, content) in files {
+                zip.start_file(name, opts).unwrap();
+                zip.write_all(content.as_bytes()).unwrap();
+            }
+            zip.finish().unwrap();
+        }
+        buf
+    };
+
+    // 1) 未篡改：完整性校验通过，文件符合规范。
+    let mut reader = OfdReader::new(OfdPackage::new(Cursor::new(build(DOCUMENT_XML))).unwrap()).unwrap();
+    let report = check_reader(&mut reader);
+    assert!(report.problems.is_empty(), "意外的结构问题: {:?}", report.problems);
+    assert_eq!(report.signatures.len(), 1);
+    assert_eq!(report.signatures[0].verdict(), SigVerdict::Valid);
+    assert!(report.conforms());
+
+    // 2) 篡改被保护的 Document.xml：应检出该文件被篡改，整体不合规。
+    let tampered = format!("{DOCUMENT_XML}<!-- tampered -->");
+    let mut reader = OfdReader::new(OfdPackage::new(Cursor::new(build(&tampered))).unwrap()).unwrap();
+    let report = check_reader(&mut reader);
+    assert_eq!(report.signatures[0].verdict(), SigVerdict::Invalid);
+    let failed: Vec<_> = report.signatures[0].failures().map(|r| r.file_ref.as_str()).collect();
+    assert_eq!(failed, vec!["/Doc_0/Document.xml"]);
+    assert!(!report.conforms());
 }
