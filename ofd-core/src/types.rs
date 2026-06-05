@@ -9,7 +9,7 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
 use crate::error::OfdError;
 
@@ -430,13 +430,19 @@ mod tests {
     #[test]
     fn resolve_paths() {
         assert_eq!(resolve_path("", &"OFD.xml".into()), "OFD.xml");
-        assert_eq!(resolve_path("", &"Doc_0/Document.xml".into()), "Doc_0/Document.xml");
+        assert_eq!(
+            resolve_path("", &"Doc_0/Document.xml".into()),
+            "Doc_0/Document.xml"
+        );
         assert_eq!(
             resolve_path("Doc_0", &"Pages/Page_0/Content.xml".into()),
             "Doc_0/Pages/Page_0/Content.xml"
         );
         // 绝对路径忽略 base
-        assert_eq!(resolve_path("Doc_0", &"/Doc_0/Res/a.png".into()), "Doc_0/Res/a.png");
+        assert_eq!(
+            resolve_path("Doc_0", &"/Doc_0/Res/a.png".into()),
+            "Doc_0/Res/a.png"
+        );
         // 处理 ..
         assert_eq!(
             resolve_path("Doc_0/Pages/Page_0", &"../../Res/a.png".into()),

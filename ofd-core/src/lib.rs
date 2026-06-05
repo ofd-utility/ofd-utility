@@ -42,12 +42,10 @@ pub use error::{OfdError, Result};
 pub use model::*;
 pub use package::OfdPackage;
 pub use render::RenderOptions;
+pub use types::{StArray, StBox, StId, StLoc, StPos, StRefId, parent_dir, resolve_path};
 pub use verify::{
-    check_path, check_reader, CheckMethod, CheckReport, LoadedSignature, RefStatus, SigVerdict,
-    SignatureReport,
-};
-pub use types::{
-    parent_dir, resolve_path, StArray, StBox, StId, StLoc, StPos, StRefId,
+    CheckMethod, CheckReport, LoadedSignature, RefStatus, SigVerdict, SignatureReport, check_path,
+    check_reader,
 };
 
 /// 包内主入口文件名（见表 1）。
@@ -91,9 +89,10 @@ impl<R: Read + Seek> OfdReader<R> {
     /// 返回的 [`LoadedDocument`] 携带文档所在目录，供后续解析页、资源等
     /// 相对路径使用。
     pub fn load_document(&mut self, body: &DocBody) -> Result<LoadedDocument> {
-        let doc_root = body.doc_root.as_ref().ok_or_else(|| {
-            OfdError::Structure("DocBody is missing DocRoot".to_string())
-        })?;
+        let doc_root = body
+            .doc_root
+            .as_ref()
+            .ok_or_else(|| OfdError::Structure("DocBody is missing DocRoot".to_string()))?;
         let path = resolve_path("", doc_root);
         let base = parent_dir(&path).to_string();
         let document: Document = self.package.parse(&path)?;

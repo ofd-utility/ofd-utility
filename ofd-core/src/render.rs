@@ -42,11 +42,11 @@ use tiny_skia::{
 
 use crate::error::{OfdError, Result};
 use crate::model::graphics::{
-    parse_deltas, CompositeObject, CtCgTransform, CtColor, CtVectorG, ImageObject, PageBlock,
-    PathObject, TextObject,
+    CompositeObject, CtCgTransform, CtColor, CtVectorG, ImageObject, PageBlock, PathObject,
+    TextObject, parse_deltas,
 };
 use crate::model::resource::{CtColorSpace, CtDrawParam};
-use crate::types::{parent_dir, resolve_path, StBox, StLoc, StRefId};
+use crate::types::{StBox, StLoc, StRefId, parent_dir, resolve_path};
 use crate::{LoadedDocument, OfdReader, PageObject, PageRef};
 
 use std::io::{Read, Seek};
@@ -148,10 +148,23 @@ fn is_cjk(ch: char) -> bool {
 /// 匹配失败时：若所引名称含中文字符，先回退到一组确实含中文字形的字型族
 /// （见 [`CJK_FALLBACK_FAMILIES`]），最后才回退到通用无衬线字体，避免中文
 /// 因落到仅含拉丁字形的字型而整体不可见。
-fn lookup_system_font(name: &str, family: &str, bold: bool, italic: bool) -> Option<(Vec<u8>, u32)> {
+fn lookup_system_font(
+    name: &str,
+    family: &str,
+    bold: bool,
+    italic: bool,
+) -> Option<(Vec<u8>, u32)> {
     let db = system_fonts();
-    let style = if italic { fontdb::Style::Italic } else { fontdb::Style::Normal };
-    let weight = if bold { fontdb::Weight::BOLD } else { fontdb::Weight::NORMAL };
+    let style = if italic {
+        fontdb::Style::Italic
+    } else {
+        fontdb::Style::Normal
+    };
+    let weight = if bold {
+        fontdb::Weight::BOLD
+    } else {
+        fontdb::Weight::NORMAL
+    };
 
     let query_family = |fam: &str| -> Option<(Vec<u8>, u32)> {
         let fam = fam.trim();
@@ -226,30 +239,65 @@ struct Mat {
 impl Mat {
     /// 单位矩阵。
     fn identity() -> Self {
-        Mat { a: 1.0, b: 0.0, c: 0.0, d: 1.0, e: 0.0, f: 0.0 }
+        Mat {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            e: 0.0,
+            f: 0.0,
+        }
     }
 
     /// 平移矩阵。
     fn translate(x: f64, y: f64) -> Self {
-        Mat { a: 1.0, b: 0.0, c: 0.0, d: 1.0, e: x, f: y }
+        Mat {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            e: x,
+            f: y,
+        }
     }
 
     /// 缩放矩阵。
     fn scale(sx: f64, sy: f64) -> Self {
-        Mat { a: sx, b: 0.0, c: 0.0, d: sy, e: 0.0, f: 0.0 }
+        Mat {
+            a: sx,
+            b: 0.0,
+            c: 0.0,
+            d: sy,
+            e: 0.0,
+            f: 0.0,
+        }
     }
 
     /// 旋转矩阵，`theta` 为弧度。在 y 轴向下的对象坐标系中表现为顺时针旋转，
     /// 与规范表 47 “从 x 轴正向顺时针”的角度约定一致。
     fn rotate(theta: f64) -> Self {
         let (s, c) = theta.sin_cos();
-        Mat { a: c, b: s, c: -s, d: c, e: 0.0, f: 0.0 }
+        Mat {
+            a: c,
+            b: s,
+            c: -s,
+            d: c,
+            e: 0.0,
+            f: 0.0,
+        }
     }
 
     /// 由规范 `[a b c d e f]` 数组构造。
     fn from_array(v: &[f64]) -> Option<Self> {
         if v.len() == 6 {
-            Some(Mat { a: v[0], b: v[1], c: v[2], d: v[3], e: v[4], f: v[5] })
+            Some(Mat {
+                a: v[0],
+                b: v[1],
+                c: v[2],
+                d: v[3],
+                e: v[4],
+                f: v[5],
+            })
         } else {
             None
         }
@@ -358,7 +406,8 @@ impl<R: Read + Seek> OfdReader<R> {
         }
 
         // 页面坐标（毫米）→ 设备像素：缩放并将物理区域左上角平移到原点。
-        let page_to_device = Mat::translate(-area.x * scale, -area.y * scale).mul(Mat::scale(scale, scale));
+        let page_to_device =
+            Mat::translate(-area.x * scale, -area.y * scale).mul(Mat::scale(scale, scale));
 
         // 叠放次序：背景模板 → 页面内容 → 前景模板。
         for tpl in &bg_templates {
@@ -470,11 +519,7 @@ impl<R: Read + Seek> OfdReader<R> {
     /// 收集文档级资源（公共资源 + 文档资源）。
     fn build_resources(&mut self, doc: &LoadedDocument) -> Result<DocResources> {
         let mut res = DocResources {
-            default_cs: doc
-                .document
-                .common_data
-                .default_cs
-                .map(|id| id.value()),
+            default_cs: doc.document.common_data.default_cs.map(|id| id.value()),
             ..Default::default()
         };
         let locs: Vec<StLoc> = doc
@@ -514,7 +559,10 @@ impl<R: Read + Seek> OfdReader<R> {
                 .map(|ff| resolve_path(&data_base, ff))
                 .and_then(|p| self.package.read(&p).ok());
             let res_font = match embedded {
-                Some(data) => FontRes { data: Some(data), index: 0 },
+                Some(data) => FontRes {
+                    data: Some(data),
+                    index: 0,
+                },
                 // 未内嵌字型：回退到同名系统字体，避免文字整体缺失。
                 None => {
                     let (data, index) = lookup_system_font(
@@ -640,7 +688,9 @@ fn render_block_at_depth(
     inherited: Option<&CtDrawParam>,
 ) {
     match block {
-        PageBlock::Composite(c) => render_composite(pixmap, res, page_to_device, c, depth, inherited),
+        PageBlock::Composite(c) => {
+            render_composite(pixmap, res, page_to_device, c, depth, inherited)
+        }
         PageBlock::Block(g) => {
             for obj in &g.objects {
                 render_block_at_depth(pixmap, res, page_to_device, obj, depth, inherited);
@@ -729,7 +779,12 @@ fn render_path(
     let Some(path) = build_path(data) else {
         return;
     };
-    let transform = object_to_device(page_to_device, &obj.boundary, obj.ctm.as_ref().map(|a| a.as_slice())).to_skia();
+    let transform = object_to_device(
+        page_to_device,
+        &obj.boundary,
+        obj.ctm.as_ref().map(|a| a.as_slice()),
+    )
+    .to_skia();
     let dp = effective_draw_param(res, obj.draw_param, inherited);
     let dp = dp.as_ref();
 
@@ -828,7 +883,10 @@ fn build_path(data: &str) -> Option<tiny_skia::Path> {
     let mut start = (0.0_f64, 0.0_f64);
 
     // 读取 n 个浮点数；不足则返回 None。
-    fn take(tokens: &mut std::iter::Peekable<std::str::SplitWhitespace>, n: usize) -> Option<Vec<f64>> {
+    fn take(
+        tokens: &mut std::iter::Peekable<std::str::SplitWhitespace>,
+        n: usize,
+    ) -> Option<Vec<f64>> {
         let mut v = Vec::with_capacity(n);
         for _ in 0..n {
             let t = tokens.next()?;
@@ -862,7 +920,11 @@ fn build_path(data: &str) -> Option<tiny_skia::Path> {
             "B" => {
                 if started && let Some(v) = take(&mut tokens, 6) {
                     pb.cubic_to(
-                        v[0] as f32, v[1] as f32, v[2] as f32, v[3] as f32, v[4] as f32,
+                        v[0] as f32,
+                        v[1] as f32,
+                        v[2] as f32,
+                        v[3] as f32,
+                        v[4] as f32,
                         v[5] as f32,
                     );
                     cur = (v[4], v[5]);
@@ -872,7 +934,16 @@ fn build_path(data: &str) -> Option<tiny_skia::Path> {
                 // 椭圆弧：rx ry angle large sweep x y（见表 36、表 42）。
                 if started && let Some(v) = take(&mut tokens, 7) {
                     let end = (v[5], v[6]);
-                    append_arc(&mut pb, cur, v[0], v[1], v[2], v[3] != 0.0, v[4] != 0.0, end);
+                    append_arc(
+                        &mut pb,
+                        cur,
+                        v[0],
+                        v[1],
+                        v[2],
+                        v[3] != 0.0,
+                        v[4] != 0.0,
+                        end,
+                    );
                     cur = end;
                 }
             }
@@ -939,7 +1010,11 @@ fn append_arc(
     // 步骤 3：求旋转坐标系下的椭圆中心。
     let num = (rx * rx) * (ry * ry) - (rx * rx) * (y1p * y1p) - (ry * ry) * (x1p * x1p);
     let den = (rx * rx) * (y1p * y1p) + (ry * ry) * (x1p * x1p);
-    let mut coef = if den > 0.0 { (num / den).max(0.0).sqrt() } else { 0.0 };
+    let mut coef = if den > 0.0 {
+        (num / den).max(0.0).sqrt()
+    } else {
+        0.0
+    };
     if large_arc == sweep {
         coef = -coef;
     }
@@ -973,7 +1048,9 @@ fn append_arc(
     }
 
     // 步骤 6：按 ≤90° 的分段以三次贝塞尔逼近。
-    let segments = (dtheta.abs() / (std::f64::consts::PI / 2.0)).ceil().max(1.0) as usize;
+    let segments = (dtheta.abs() / (std::f64::consts::PI / 2.0))
+        .ceil()
+        .max(1.0) as usize;
     let delta = dtheta / segments as f64;
     let t = (4.0 / 3.0) * (delta / 4.0).tan();
     let mut th = theta1;
@@ -999,7 +1076,12 @@ fn append_arc(
         let c1 = (px1 + t * d1x, py1 + t * d1y);
         let c2 = (px2 - t * d2x, py2 - t * d2y);
         pb.cubic_to(
-            c1.0 as f32, c1.1 as f32, c2.0 as f32, c2.1 as f32, px2 as f32, py2 as f32,
+            c1.0 as f32,
+            c1.1 as f32,
+            c2.0 as f32,
+            c2.1 as f32,
+            px2 as f32,
+            py2 as f32,
         );
         th = th2;
     }
@@ -1054,9 +1136,12 @@ fn render_text(
     // 字符方向：每个字形绕其原点顺时针旋转该角度（见 11.3、表 47）。
     let char_dir = obj.char_direction.unwrap_or(0) as f64;
 
-    let transform =
-        object_to_device(page_to_device, &obj.boundary, obj.ctm.as_ref().map(|a| a.as_slice()))
-            .to_skia();
+    let transform = object_to_device(
+        page_to_device,
+        &obj.boundary,
+        obj.ctm.as_ref().map(|a| a.as_slice()),
+    )
+    .to_skia();
 
     let placed = place_glyphs(obj, |ch| face.glyph_index(ch));
 
@@ -1065,7 +1150,10 @@ fn render_text(
         // 字体单位（y 向上）→ 对象坐标（y 向下）：缩放并翻转 y，
         // 叠加字符方向旋转，最后平移到字形原点。
         let glyph_mat = glyph_to_object(g.origin.0, g.origin.1, scale_x, scale_y, char_dir);
-        let mut outliner = Outliner { pb: &mut pb, m: glyph_mat };
+        let mut outliner = Outliner {
+            pb: &mut pb,
+            m: glyph_mat,
+        };
         face.outline_glyph(g.gid, &mut outliner);
     }
 
@@ -1129,8 +1217,14 @@ fn text_code_points(obj: &TextObject) -> Vec<(f64, f64)> {
         let (mut cx, mut cy) = (start_x, start_y);
         for (i, _) in text.chars().enumerate() {
             if i > 0 {
-                cx += dx.get(i - 1).copied().unwrap_or_else(|| dx.last().copied().unwrap_or(0.0));
-                cy += dy.get(i - 1).copied().unwrap_or_else(|| dy.last().copied().unwrap_or(0.0));
+                cx += dx
+                    .get(i - 1)
+                    .copied()
+                    .unwrap_or_else(|| dx.last().copied().unwrap_or(0.0));
+                cy += dy
+                    .get(i - 1)
+                    .copied()
+                    .unwrap_or_else(|| dy.last().copied().unwrap_or(0.0));
             }
             points.push((cx, cy));
         }
@@ -1175,7 +1269,10 @@ fn place_glyphs(
                     // 绘制点；字形较字符少时（多对一）则只用前若干个绘制点。
                     let pi = i + j.min(code_count.saturating_sub(1));
                     if let Some(&origin) = points.get(pi) {
-                        out.push(PlacedGlyph { gid: ttf_parser::GlyphId(g as u16), origin });
+                        out.push(PlacedGlyph {
+                            gid: ttf_parser::GlyphId(g as u16),
+                            origin,
+                        });
                     }
                 }
             }
@@ -1317,7 +1414,9 @@ fn encode_image(img: RgbaImage, format: ImageFormat) -> Result<Vec<u8>> {
     let mut buf = Cursor::new(Vec::new());
     match format {
         ImageFormat::Jpeg => {
-            DynamicImage::ImageRgba8(img).to_rgb8().write_to(&mut buf, format)?;
+            DynamicImage::ImageRgba8(img)
+                .to_rgb8()
+                .write_to(&mut buf, format)?;
         }
         _ => {
             img.write_to(&mut buf, format)?;
@@ -1378,7 +1477,11 @@ fn resolve_color(res: &DocResources, color: &CtColor, obj_alpha: Option<u8>) -> 
             }
             "CMYK" => {
                 let (c, m, y, k) = (norm(0), norm(1), norm(2), norm(3));
-                ((1.0 - c) * (1.0 - k), (1.0 - m) * (1.0 - k), (1.0 - y) * (1.0 - k))
+                (
+                    (1.0 - c) * (1.0 - k),
+                    (1.0 - m) * (1.0 - k),
+                    (1.0 - y) * (1.0 - k),
+                )
             }
             // RGB 及未知类型按 RGB 处理。
             _ => (norm(0), norm(1), norm(2)),
@@ -1412,7 +1515,10 @@ mod tests {
     }
 
     fn color(component: f64) -> CtColor {
-        CtColor { value: Some(StArray(vec![component])), ..Default::default() }
+        CtColor {
+            value: Some(StArray(vec![component])),
+            ..Default::default()
+        }
     }
 
     fn resources_with(params: Vec<CtDrawParam>) -> DocResources {
@@ -1498,7 +1604,13 @@ mod tests {
         let eff =
             effective_draw_param(&res, Some(StRefId(2)), Some(&layer_with_lw)).expect("param");
         // 填充色取图元自身（0.1）而非图层（0.6）。
-        assert_eq!(eff.fill_color.as_ref().and_then(|c| c.value.as_ref()).map(|v| v.as_slice()[0]), Some(0.1));
+        assert_eq!(
+            eff.fill_color
+                .as_ref()
+                .and_then(|c| c.value.as_ref())
+                .map(|v| v.as_slice()[0]),
+            Some(0.1)
+        );
         // 线宽图元未设置：回退图层值。
         assert_eq!(eff.line_width, Some(3.0));
     }
@@ -1512,15 +1624,26 @@ mod tests {
         // sweep=1 为顺时针：y 轴向下时 9→12→3 点方向，鼓向 -y（上方）。
         let cw = build_path("S 0 0 A 5 5 0 1 1 10 0").expect("path");
         let b = cw.bounds();
-        assert!(b.top() < -4.5, "clockwise semicircle should bulge up (-y), got {}", b.top());
+        assert!(
+            b.top() < -4.5,
+            "clockwise semicircle should bulge up (-y), got {}",
+            b.top()
+        );
         assert!(b.bottom() < 0.5, "stays on one side of the chord");
-        assert!((b.left()).abs() < 0.5 && (b.right() - 10.0).abs() < 0.5, "span ≈ diameter");
+        assert!(
+            (b.left()).abs() < 0.5 && (b.right() - 10.0).abs() < 0.5,
+            "span ≈ diameter"
+        );
         assert!((b.height() - 5.0).abs() < 0.5, "bulge ≈ radius");
 
         // sweep=0 为逆时针：应鼓向相反一侧（+y，下方）。
         let ccw = build_path("S 0 0 A 5 5 0 1 0 10 0").expect("path");
         let b2 = ccw.bounds();
-        assert!(b2.bottom() > 4.5, "counter-clockwise should bulge down (+y), got {}", b2.bottom());
+        assert!(
+            b2.bottom() > 4.5,
+            "counter-clockwise should bulge down (+y), got {}",
+            b2.bottom()
+        );
     }
 
     /// 半径为 0 时按表 42 退化为直线段，不产生鼓出。
@@ -1633,7 +1756,9 @@ mod tests {
             }],
             ..Default::default()
         };
-        let placed = place_glyphs(&obj, |_| panic!("CMAP must not be used inside transform range"));
+        let placed = place_glyphs(&obj, |_| {
+            panic!("CMAP must not be used inside transform range")
+        });
         assert_eq!(placed.len(), 1);
         assert_eq!(placed[0].gid.0, 192);
         assert_eq!(placed[0].origin, (0.0, 0.0));

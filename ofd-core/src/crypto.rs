@@ -12,7 +12,13 @@
 
 /// SM3 初始向量 IV（见 GB/T 32905—2016 4.1）。
 const IV: [u32; 8] = [
-    0x7380_166f, 0x4914_b2b9, 0x1724_42d7, 0xda8a_0600, 0xa96f_30bc, 0x1631_38aa, 0xe38d_ee4d,
+    0x7380_166f,
+    0x4914_b2b9,
+    0x1724_42d7,
+    0xda8a_0600,
+    0xa96f_30bc,
+    0x1631_38aa,
+    0xe38d_ee4d,
     0xb0fb_0e4e,
 ];
 
@@ -79,7 +85,11 @@ fn compress(v: &mut [u32; 8], block: &[u8]) {
 
     for j in 0..64 {
         // 常量 Tj：前 16 轮与后 48 轮不同（见 4.3）。
-        let t = if j < 16 { 0x79cc_4519u32 } else { 0x7a87_9d8au32 };
+        let t = if j < 16 {
+            0x79cc_4519u32
+        } else {
+            0x7a87_9d8au32
+        };
         let ss1 = a
             .rotate_left(12)
             .wrapping_add(e)
@@ -92,14 +102,8 @@ fn compress(v: &mut [u32; 8], block: &[u8]) {
         } else {
             ((a & b) | (a & c) | (b & c), (e & f) | (!e & g))
         };
-        let tt1 = ff
-            .wrapping_add(d)
-            .wrapping_add(ss2)
-            .wrapping_add(w1[j]);
-        let tt2 = gg
-            .wrapping_add(h)
-            .wrapping_add(ss1)
-            .wrapping_add(w[j]);
+        let tt1 = ff.wrapping_add(d).wrapping_add(ss2).wrapping_add(w1[j]);
+        let tt2 = gg.wrapping_add(h).wrapping_add(ss1).wrapping_add(w[j]);
         d = c;
         c = b.rotate_left(9);
         b = a;

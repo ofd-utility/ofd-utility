@@ -18,19 +18,19 @@ pub mod signature;
 
 pub use annotation::{Annot, AnnotPageRef, Annotations, Appearance, PageAnnot};
 pub use common::{Actions, CtAction, CtDest, Version, Versions};
-pub use graphics::{
-    parse_deltas, CompositeObject, CtColor, CtVectorG, ImageObject, PageBlock, PageBlockGroup,
-    PathObject, TextCode, TextObject,
-};
 pub use document::{
     Bookmarks, CommonData, CtBookmark, CtOutlineElem, CtPageArea, CtPermission, Document, Outlines,
-    Print, ValidPeriod, VPreferences,
+    Print, VPreferences, ValidPeriod,
+};
+pub use graphics::{
+    CompositeObject, CtColor, CtVectorG, ImageObject, PageBlock, PageBlockGroup, PathObject,
+    TextCode, TextObject, parse_deltas,
 };
 pub use ofd::{CtDocInfo, CustomData, CustomDatas, DocBody, Keywords, Ofd};
 pub use page::{Content, CtLayer, CtTemplatePage, PageObject, PageRef, Pages, Template};
 pub use resource::{
-    ColorSpaces, CompositeGraphicUnits, CtColorSpace, CtDrawParam, CtFont, CtMultiMedia, DrawParams,
-    Fonts, MultiMedias, Res, ResChild,
+    ColorSpaces, CompositeGraphicUnits, CtColorSpace, CtDrawParam, CtFont, CtMultiMedia,
+    DrawParams, Fonts, MultiMedias, Res, ResChild,
 };
 pub use signature::{
     Provider, Reference, References, Seal, Signature, SignatureRef, Signatures, SignedInfo,

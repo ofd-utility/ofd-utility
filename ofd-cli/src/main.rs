@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use ofd_core::render::{image_format_from_ext, RenderOptions};
-use ofd_core::verify::{check_path, RefStatus, SigVerdict};
+use ofd_core::render::{RenderOptions, image_format_from_ext};
+use ofd_core::verify::{RefStatus, SigVerdict, check_path};
 use ofd_core::{OfdReader, Result};
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
@@ -156,7 +156,9 @@ fn render_cmd(
     prefix: Option<String>,
 ) -> Result<()> {
     if image_format_from_ext(format).is_none() {
-        return Err(ofd_core::OfdError::Render(format!("不支持的图片格式: {format}")));
+        return Err(ofd_core::OfdError::Render(format!(
+            "不支持的图片格式: {format}"
+        )));
     }
 
     // 缺省前缀使用渲染时刻：ofd2img-yyyyMMddHHmmss。
@@ -193,8 +195,16 @@ fn info_cmd(path: &Path) -> Result<()> {
 
     // —— OFD.xml 主入口全部内容 ——
     info!("OFD 主入口 ({})", path.display());
-    info!("  Version={}  DocType={}{}", ofd.version, ofd.doc_type,
-        if ofd.is_archive() { " (存档规范)" } else { "" });
+    info!(
+        "  Version={}  DocType={}{}",
+        ofd.version,
+        ofd.doc_type,
+        if ofd.is_archive() {
+            " (存档规范)"
+        } else {
+            ""
+        }
+    );
     info!("  DocBody 数: {}", ofd.doc_bodies.len());
 
     let bodies = ofd.doc_bodies.clone();
@@ -206,8 +216,10 @@ fn info_cmd(path: &Path) -> Result<()> {
             for v in &versions.versions {
                 info!(
                     "  Version: ID={} Index={} Current={} BaseLoc={}",
-                    opt(v.id.as_ref()), opt(v.index.as_ref()),
-                    opt(v.current.as_ref()), opt(v.base_loc.as_ref()),
+                    opt(v.id.as_ref()),
+                    opt(v.index.as_ref()),
+                    opt(v.current.as_ref()),
+                    opt(v.base_loc.as_ref()),
                 );
             }
         }
@@ -233,11 +245,7 @@ fn info_cmd(path: &Path) -> Result<()> {
 
         for page_ref in doc.pages() {
             let page = reader.load_page(&doc, page_ref)?;
-            let layers = page
-                .content
-                .as_ref()
-                .map(|c| c.layers.len())
-                .unwrap_or(0);
+            let layers = page.content.as_ref().map(|c| c.layers.len()).unwrap_or(0);
             info!(
                 "    页 {} -> {} (图层数: {}{})",
                 page_ref.id,
@@ -254,18 +262,40 @@ fn info_cmd(path: &Path) -> Result<()> {
 /// 打印 `CT_DocInfo` 的全部字段（缺省项显示 `-`），结构紧凑。
 fn dump_doc_info(d: &ofd_core::CtDocInfo) {
     info!("  DocInfo:");
-    info!("    DocID={}  DocUsage={}", opt(d.doc_id.as_ref()), opt(d.doc_usage.as_ref()));
+    info!(
+        "    DocID={}  DocUsage={}",
+        opt(d.doc_id.as_ref()),
+        opt(d.doc_usage.as_ref())
+    );
     info!("    Title={}", opt(d.title.as_ref()));
-    info!("    Author={}  Creator={} {}",
-        opt(d.author.as_ref()), opt(d.creator.as_ref()), opt(d.creator_version.as_ref()));
+    info!(
+        "    Author={}  Creator={} {}",
+        opt(d.author.as_ref()),
+        opt(d.creator.as_ref()),
+        opt(d.creator_version.as_ref())
+    );
     info!("    Subject={}", opt(d.subject.as_ref()));
     info!("    Abstract={}", opt(d.abstract_.as_ref()));
-    info!("    CreationDate={}  ModDate={}",
-        opt(d.creation_date.as_ref()), opt(d.mod_date.as_ref()));
+    info!(
+        "    CreationDate={}  ModDate={}",
+        opt(d.creation_date.as_ref()),
+        opt(d.mod_date.as_ref())
+    );
     info!("    Cover={}", opt(d.cover.as_ref()));
 
-    let keywords = d.keywords.as_ref().map(|k| k.keywords.join(", ")).unwrap_or_default();
-    info!("    Keywords={}", if keywords.is_empty() { "-".into() } else { keywords });
+    let keywords = d
+        .keywords
+        .as_ref()
+        .map(|k| k.keywords.join(", "))
+        .unwrap_or_default();
+    info!(
+        "    Keywords={}",
+        if keywords.is_empty() {
+            "-".into()
+        } else {
+            keywords
+        }
+    );
 
     match &d.custom_datas {
         Some(c) if !c.custom_datas.is_empty() => {

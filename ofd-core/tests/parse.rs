@@ -4,10 +4,10 @@ use std::io::{Cursor, Write};
 
 use ofd_core::crypto::{base64_encode, sm3};
 use ofd_core::render::RenderOptions;
-use ofd_core::verify::{check_reader, SigVerdict};
+use ofd_core::verify::{SigVerdict, check_reader};
 use ofd_core::{OfdPackage, OfdReader};
-use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
+use zip::write::SimpleFileOptions;
 
 const OFD_XML: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <ofd:OFD xmlns:ofd="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD">
@@ -85,8 +85,7 @@ fn build_ofd() -> Vec<u8> {
     let mut buf = Vec::new();
     {
         let mut zip = ZipWriter::new(Cursor::new(&mut buf));
-        let opts = SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Stored);
+        let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
         let files = [
             ("OFD.xml", OFD_XML),
             ("Doc_0/Document.xml", DOCUMENT_XML),
@@ -255,7 +254,10 @@ fn render_annotation_overlay() {
     assert!(
         p.green() > 150 && p.red() < 100 && p.blue() < 100,
         "expected green annotation, got rgba({},{},{},{})",
-        p.red(), p.green(), p.blue(), p.alpha()
+        p.red(),
+        p.green(),
+        p.blue(),
+        p.alpha()
     );
 }
 
@@ -331,7 +333,10 @@ fn render_composite_object_from_resource() {
     assert!(
         p.blue() > 200 && p.red() < 60 && p.green() < 60,
         "expected blue composite fill, got rgba({},{},{},{})",
-        p.red(), p.green(), p.blue(), p.alpha()
+        p.red(),
+        p.green(),
+        p.blue(),
+        p.alpha()
     );
 }
 
@@ -353,9 +358,14 @@ fn render_page_to_pixmap() {
     let px = (100.0 * scale) as u32; // 100mm 处
     let idx = (px + px * pixmap.width()) as usize;
     let pixel = pixmap.pixels()[idx].demultiply();
-    assert!(pixel.red() > 200 && pixel.green() < 60 && pixel.blue() < 60,
+    assert!(
+        pixel.red() > 200 && pixel.green() < 60 && pixel.blue() < 60,
         "expected red fill, got rgba({},{},{},{})",
-        pixel.red(), pixel.green(), pixel.blue(), pixel.alpha());
+        pixel.red(),
+        pixel.green(),
+        pixel.blue(),
+        pixel.alpha()
+    );
 
     // 编码为 PNG 应成功且非空。
     let png = reader
@@ -406,7 +416,8 @@ fn verify_signature_integrity() {
         let mut buf = Vec::new();
         {
             let mut zip = ZipWriter::new(Cursor::new(&mut buf));
-            let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+            let opts =
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
             let files = [
                 ("OFD.xml", OFD_SIGNED_XML),
                 ("Doc_0/Document.xml", document_xml),
@@ -428,19 +439,28 @@ fn verify_signature_integrity() {
     };
 
     // 1) 未篡改：完整性校验通过，文件符合规范。
-    let mut reader = OfdReader::new(OfdPackage::new(Cursor::new(build(DOCUMENT_XML))).unwrap()).unwrap();
+    let mut reader =
+        OfdReader::new(OfdPackage::new(Cursor::new(build(DOCUMENT_XML))).unwrap()).unwrap();
     let report = check_reader(&mut reader);
-    assert!(report.problems.is_empty(), "意外的结构问题: {:?}", report.problems);
+    assert!(
+        report.problems.is_empty(),
+        "意外的结构问题: {:?}",
+        report.problems
+    );
     assert_eq!(report.signatures.len(), 1);
     assert_eq!(report.signatures[0].verdict(), SigVerdict::Valid);
     assert!(report.conforms());
 
     // 2) 篡改被保护的 Document.xml：应检出该文件被篡改，整体不合规。
     let tampered = format!("{DOCUMENT_XML}<!-- tampered -->");
-    let mut reader = OfdReader::new(OfdPackage::new(Cursor::new(build(&tampered))).unwrap()).unwrap();
+    let mut reader =
+        OfdReader::new(OfdPackage::new(Cursor::new(build(&tampered))).unwrap()).unwrap();
     let report = check_reader(&mut reader);
     assert_eq!(report.signatures[0].verdict(), SigVerdict::Invalid);
-    let failed: Vec<_> = report.signatures[0].failures().map(|r| r.file_ref.as_str()).collect();
+    let failed: Vec<_> = report.signatures[0]
+        .failures()
+        .map(|r| r.file_ref.as_str())
+        .collect();
     assert_eq!(failed, vec!["/Doc_0/Document.xml"]);
     assert!(!report.conforms());
 }

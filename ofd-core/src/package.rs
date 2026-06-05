@@ -53,9 +53,8 @@ impl<R: Read + Seek> OfdPackage<R> {
     /// 读取包内指定条目为 UTF-8 文本。
     pub fn read_to_string(&mut self, path: &str) -> Result<String> {
         let bytes = self.read(path)?;
-        String::from_utf8(bytes).map_err(|e| {
-            OfdError::Structure(format!("entry {path} is not valid UTF-8: {e}"))
-        })
+        String::from_utf8(bytes)
+            .map_err(|e| OfdError::Structure(format!("entry {path} is not valid UTF-8: {e}")))
     }
 
     /// 读取并将包内 XML 条目反序列化为数据模型 `T`。

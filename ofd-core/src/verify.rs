@@ -34,7 +34,7 @@ use std::path::Path;
 
 use crate::crypto::{base64_encode, sm3};
 use crate::model::signature::{Signature, Signatures};
-use crate::types::{parent_dir, resolve_path, StId, StLoc};
+use crate::types::{StId, StLoc, parent_dir, resolve_path};
 use crate::{OfdReader, Result};
 
 /// 国密 SM3 杂凑算法的 OID（`References@CheckMethod` 取值）。
@@ -274,7 +274,9 @@ pub fn check_path<P: AsRef<Path>>(path: P) -> CheckReport {
     let mut reader = match OfdReader::open(path) {
         Ok(r) => r,
         Err(e) => {
-            report.problems.push(format!("无法打开或解析 OFD 主入口: {e}"));
+            report
+                .problems
+                .push(format!("无法打开或解析 OFD 主入口: {e}"));
             return report;
         }
     };
@@ -288,7 +290,9 @@ pub fn check_path<P: AsRef<Path>>(path: P) -> CheckReport {
 fn check_structure<R: Read + Seek>(reader: &mut OfdReader<R>, report: &mut CheckReport) {
     let ofd = reader.ofd();
     if ofd.version.trim().is_empty() {
-        report.problems.push("OFD.xml 缺少 Version 属性".to_string());
+        report
+            .problems
+            .push("OFD.xml 缺少 Version 属性".to_string());
     }
     if ofd.doc_type != "OFD" && ofd.doc_type != "OFD-A" {
         report
