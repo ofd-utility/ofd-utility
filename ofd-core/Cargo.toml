@@ -3,6 +3,8 @@ name = "ofd-core"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.93"
+license = "MIT"
+description = "OFD (Open Fixed-layout Document, GB/T 33190-2016) parsing, validation and rendering library"
 
 [dependencies]
 quick-xml = { version = "0.36", features = ["serialize"] }

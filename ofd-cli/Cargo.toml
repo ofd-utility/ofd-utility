@@ -3,6 +3,8 @@ name = "ofd-cli"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.93"
+license = "MIT"
+description = "Command-line tool to inspect, validate and render OFD (GB/T 33190-2016) files"
 
 [[bin]]
 name = "ofd-cli"
