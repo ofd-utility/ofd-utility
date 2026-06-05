@@ -37,6 +37,9 @@ enum Command {
         /// 输出图片格式。
         #[arg(long, default_value = "png", value_parser = ["png", "jpg", "jpeg", "bmp", "tiff", "gif", "webp"])]
         format: String,
+        /// 输出文件名前缀，缺省为 ofd2img-渲染日期(yyyyMMddHHmmss)。
+        #[arg(long)]
+        prefix: Option<String>,
     },
 }
 
@@ -58,7 +61,8 @@ fn main() -> ExitCode {
             out_dir,
             dpi,
             format,
-        } => render_cmd(&file, &out_dir, dpi, &format),
+            prefix,
+        } => render_cmd(&file, &out_dir, dpi, &format, prefix),
     };
 
     match result {
@@ -71,10 +75,20 @@ fn main() -> ExitCode {
 }
 
 /// `render` 子命令：将 OFD 各页渲染为图片输出到指定目录。
-fn render_cmd(path: &Path, out_dir: &Path, dpi: f64, format: &str) -> Result<()> {
+fn render_cmd(
+    path: &Path,
+    out_dir: &Path,
+    dpi: f64,
+    format: &str,
+    prefix: Option<String>,
+) -> Result<()> {
     if image_format_from_ext(format).is_none() {
         return Err(ofd_core::OfdError::Render(format!("不支持的图片格式: {format}")));
     }
+
+    // 缺省前缀使用渲染时刻：ofd2img-yyyyMMddHHmmss。
+    let prefix = prefix
+        .unwrap_or_else(|| format!("ofd2img-{}", chrono::Local::now().format("%Y%m%d%H%M%S")));
 
     std::fs::create_dir_all(out_dir)?;
     let opts = RenderOptions::with_dpi(dpi);
@@ -89,7 +103,7 @@ fn render_cmd(path: &Path, out_dir: &Path, dpi: f64, format: &str) -> Result<()>
         let doc = reader.load_document(body)?;
         let page_count = doc.pages().len();
         for pi in 0..page_count {
-            let out = out_dir.join(format!("doc{di}_page{pi}.{format}"));
+            let out = out_dir.join(format!("{prefix}_doc{di}_page{pi}.{format}"));
             reader.render_page_to_file(&doc, pi, &opts, &out)?;
             info!("已渲染: {}", out.display());
             total += 1;
