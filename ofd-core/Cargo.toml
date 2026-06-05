@@ -5,14 +5,10 @@ edition = "2024"
 rust-version = "1.93"
 
 [dependencies]
-clap = { version = "4", features = ["derive"] }
-chrono = { version = "0.4", default-features = false, features = ["clock"] }
 quick-xml = { version = "0.36", features = ["serialize"] }
 serde = { version = "1", features = ["derive"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 thiserror = "2"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # 渲染（OFD → 图片）：tiny-skia 负责 2D 光栅化，image 负责图片编解码，
 # ttf-parser 解析内嵌字型轮廓以绘制文字。
 tiny-skia = "0.11"

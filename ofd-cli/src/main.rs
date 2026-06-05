@@ -1,5 +1,5 @@
-//! `ofd-core` 演示命令行：解析一个 OFD 文件并打印其基础结构信息，
-//! 或将其页面渲染为图片。
+//! `ofd-cli`：基于 `ofd-core` 库的命令行工具——解析一个 OFD 文件并打印其基础
+//! 结构信息（`info`），或将其页面渲染为图片（`render`）。
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -12,7 +12,7 @@ use tracing_subscriber::EnvFilter;
 
 /// OFD 文件解析与渲染命令行工具。
 #[derive(Parser)]
-#[command(name = "ofd-core", version, about, long_about = None)]
+#[command(name = "ofd-cli", version, about, long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -21,7 +21,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// 解析 OFD 文件并打印其基础结构信息。
-    Dump {
+    Info {
         /// 待解析的 OFD 文件路径。
         file: PathBuf,
     },
@@ -55,7 +55,7 @@ fn main() -> ExitCode {
 
     let cli = Cli::parse();
     let result = match cli.command {
-        Command::Dump { file } => dump(&file),
+        Command::Info { file } => info_cmd(&file),
         Command::Render {
             file,
             out_dir,
@@ -113,7 +113,8 @@ fn render_cmd(
     Ok(())
 }
 
-fn dump(path: &Path) -> Result<()> {
+/// `info` 子命令：解析 OFD 文件并打印其基础结构信息。
+fn info_cmd(path: &Path) -> Result<()> {
     let mut reader = OfdReader::open(path)?;
     let ofd = reader.ofd();
 
