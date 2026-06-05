@@ -5,6 +5,12 @@ edition = "2024"
 rust-version = "1.93"
 license = "MIT"
 description = "OFD (Open Fixed-layout Document, GB/T 33190-2016) parsing, validation and rendering library"
+repository = "https://github.com/ofd-utility/ofd-utility"
+homepage = "https://github.com/ofd-utility/ofd-utility"
+documentation = "https://docs.rs/ofd-core"
+readme = "README.md"
+keywords = ["ofd", "document", "parser", "render", "gbt33190"]
+categories = ["parser-implementations", "rendering", "encoding"]
 
 [dependencies]
 quick-xml = { version = "0.36", features = ["serialize"] }
