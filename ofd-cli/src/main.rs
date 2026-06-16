@@ -7,10 +7,10 @@ use std::process::ExitCode;
 use std::collections::BTreeMap;
 
 use clap::{Parser, Subcommand};
-use regex::Regex;
 use ofd_core::render::{RenderOptions, image_format_from_ext};
 use ofd_core::verify::{RefStatus, SigVerdict, check_path};
 use ofd_core::{OfdPackage, OfdReader, Result};
+use regex::Regex;
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
@@ -85,11 +85,7 @@ fn main() -> ExitCode {
     let result = match cli.command {
         Command::Info { file } => info_cmd(&file),
         Command::Tree { file, size } => tree_cmd(&file, size),
-        Command::Cat {
-            file,
-            pattern,
-            raw,
-        } => cat_cmd(&file, &pattern, raw),
+        Command::Cat { file, pattern, raw } => cat_cmd(&file, &pattern, raw),
         Command::Check { files } => return check_cmd(&files),
         Command::Render {
             file,
@@ -380,9 +376,8 @@ fn print_children(node: &Node, prefix: &str, dirs: &mut usize, files: &mut usize
 /// `xml`）写 stdout——默认经 [`ofd_core::pretty_xml`] 重排，`raw` 时原样输出；
 /// 其它类型按字节解压并扁平化拷贝到当前工作目录。无匹配时以非零状态退出。
 fn cat_cmd(path: &Path, pattern: &str, raw: bool) -> Result<()> {
-    let re = Regex::new(pattern).map_err(|e| {
-        ofd_core::OfdError::Structure(format!("无效的正则表达式 {pattern:?}: {e}"))
-    })?;
+    let re = Regex::new(pattern)
+        .map_err(|e| ofd_core::OfdError::Structure(format!("无效的正则表达式 {pattern:?}: {e}")))?;
 
     let mut package = OfdPackage::open(path)?;
     let matched: Vec<String> = package
@@ -400,7 +395,11 @@ fn cat_cmd(path: &Path, pattern: &str, raw: bool) -> Result<()> {
     for name in matched {
         if is_xml(&name) {
             let text = package.read_to_string(&name)?;
-            let out = if raw { text } else { ofd_core::pretty_xml(&text)? };
+            let out = if raw {
+                text
+            } else {
+                ofd_core::pretty_xml(&text)?
+            };
             // 内容直接写 stdout（不经 tracing），避免日志前缀干扰 XML 缩进对齐。
             println!("==> {name} <==");
             println!("{out}");

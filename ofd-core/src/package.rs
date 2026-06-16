@@ -151,10 +151,7 @@ mod tests {
             #[serde(rename = "@v")]
             v: String,
         }
-        let mut p = pkg(&[
-            ("ok.xml", br#"<Doc v="1"/>"#),
-            ("bad.xml", b"<Doc"),
-        ]);
+        let mut p = pkg(&[("ok.xml", br#"<Doc v="1"/>"#), ("bad.xml", b"<Doc")]);
         assert_eq!(p.parse::<Doc>("ok.xml").unwrap(), Doc { v: "1".into() });
         // XML 解析失败分支。
         assert!(p.parse::<Doc>("bad.xml").is_err());

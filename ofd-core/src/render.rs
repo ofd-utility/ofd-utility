@@ -1860,7 +1860,11 @@ mod tests {
     fn resolve_color_cmyk() {
         // 纯黑 K=1 → 黑。
         let res = res_with_cs(vec![cs(2, "CMYK", None)], None);
-        let c = resolve_color(&res, &colored(vec![0.0, 0.0, 0.0, 255.0], Some(2), None), None);
+        let c = resolve_color(
+            &res,
+            &colored(vec![0.0, 0.0, 0.0, 255.0], Some(2), None),
+            None,
+        );
         assert_eq!(&c[..3], &[0, 0, 0]);
     }
 
@@ -1960,7 +1964,11 @@ mod tests {
         let back = pixmap_to_image(&pm);
         assert_eq!(back.get_pixel(0, 0).0, [255, 0, 0, 255]);
         // PNG / JPEG 编码各走一条分支。
-        assert!(!encode_image(img.clone(), ImageFormat::Png).unwrap().is_empty());
+        assert!(
+            !encode_image(img.clone(), ImageFormat::Png)
+                .unwrap()
+                .is_empty()
+        );
         assert!(!encode_image(img, ImageFormat::Jpeg).unwrap().is_empty());
     }
 

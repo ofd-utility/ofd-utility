@@ -396,10 +396,7 @@ mod tests {
 
     #[test]
     fn verdict_unverified_when_method_unsupported() {
-        let r = report_with(
-            CheckMethod::Unsupported("x".into()),
-            vec![RefStatus::Ok],
-        );
+        let r = report_with(CheckMethod::Unsupported("x".into()), vec![RefStatus::Ok]);
         assert_eq!(r.verdict(), SigVerdict::Unverified);
     }
 
@@ -434,9 +431,10 @@ mod tests {
             .signatures
             .push(report_with(CheckMethod::Sm3, vec![RefStatus::Ok]));
         // Unverified 不算不合规。
-        report
-            .signatures
-            .push(report_with(CheckMethod::Unsupported("x".into()), vec![RefStatus::Ok]));
+        report.signatures.push(report_with(
+            CheckMethod::Unsupported("x".into()),
+            vec![RefStatus::Ok],
+        ));
         assert!(report.conforms());
 
         // 有结构问题 → 不符合。

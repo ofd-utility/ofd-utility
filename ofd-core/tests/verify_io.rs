@@ -83,7 +83,10 @@ fn base_files() -> Vec<(&'static str, String)> {
 }
 
 fn as_refs<'a>(files: &'a [(&'static str, String)]) -> Vec<(&'a str, &'a str)> {
-    files.iter().map(|(n, c)| (*n as &str, c.as_str())).collect()
+    files
+        .iter()
+        .map(|(n, c)| (*n as &str, c.as_str()))
+        .collect()
 }
 
 #[test]

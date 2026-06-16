@@ -176,7 +176,10 @@ fn info_on_invalid_file_fails() {
 
 #[test]
 fn tree_lists_entries() {
-    let path = write_ofd("tree.ofd", &content_files(&ofd_simple("OFD", "Doc_0/Document.xml"), DOCUMENT_XML));
+    let path = write_ofd(
+        "tree.ofd",
+        &content_files(&ofd_simple("OFD", "Doc_0/Document.xml"), DOCUMENT_XML),
+    );
     bin()
         .args(["tree", path.to_str().unwrap()])
         .assert()
@@ -188,7 +191,10 @@ fn tree_lists_entries() {
 
 #[test]
 fn tree_with_size_shows_bytes() {
-    let path = write_ofd("tree_size.ofd", &content_files(&ofd_simple("OFD", "Doc_0/Document.xml"), DOCUMENT_XML));
+    let path = write_ofd(
+        "tree_size.ofd",
+        &content_files(&ofd_simple("OFD", "Doc_0/Document.xml"), DOCUMENT_XML),
+    );
     bin()
         .args(["tree", "--size", path.to_str().unwrap()])
         .assert()
@@ -243,7 +249,10 @@ fn ofd_simple_signed() -> String {
 }
 
 fn write_signed(name: &str, files: Vec<(String, String)>) -> PathBuf {
-    let refs: Vec<(&str, &str)> = files.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
+    let refs: Vec<(&str, &str)> = files
+        .iter()
+        .map(|(a, b)| (a.as_str(), b.as_str()))
+        .collect();
     write_ofd(name, &refs)
 }
 
@@ -392,10 +401,7 @@ fn cat_invalid_regex_fails() {
 
 #[test]
 fn render_writes_images() {
-    let path = write_ofd(
-        "render.ofd",
-        &content_files(&ofd_full(), DOCUMENT_XML),
-    );
+    let path = write_ofd("render.ofd", &content_files(&ofd_full(), DOCUMENT_XML));
     let out = tmp_dir().join("render_out");
     let _ = std::fs::remove_dir_all(&out);
 
@@ -424,9 +430,11 @@ fn render_writes_images() {
         .assert()
         .success();
     assert!(
-        std::fs::read_dir(&out)
+        std::fs::read_dir(&out).unwrap().any(|e| e
             .unwrap()
-            .any(|e| e.unwrap().file_name().to_string_lossy().starts_with("custom")),
+            .file_name()
+            .to_string_lossy()
+            .starts_with("custom")),
         "应存在自定义前缀输出"
     );
 }

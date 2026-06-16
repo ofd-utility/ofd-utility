@@ -466,10 +466,7 @@ mod tests {
         assert!(!StLoc::from("Res/a.png").is_absolute());
         // StLoc::resolve 委托 resolve_path：绝对路径忽略 base。
         assert_eq!(loc.resolve("Doc_0/Pages"), "Doc_0/Res/a.png");
-        assert_eq!(
-            StLoc::from("a.png").resolve("Doc_0/Res"),
-            "Doc_0/Res/a.png"
-        );
+        assert_eq!(StLoc::from("a.png").resolve("Doc_0/Res"), "Doc_0/Res/a.png");
         // FromStr 与默认值。
         assert_eq!("x/y".parse::<StLoc>().unwrap(), StLoc("x/y".into()));
         assert_eq!(StLoc::default().as_str(), "");
@@ -489,7 +486,10 @@ mod tests {
     #[test]
     fn st_pos_and_box_display() {
         assert_eq!(StPos::new(1.5, 2.0).to_string(), "1.5 2");
-        assert_eq!(StBox::new(0.0, 0.0, 210.0, 297.0).to_string(), "0 0 210 297");
+        assert_eq!(
+            StBox::new(0.0, 0.0, 210.0, 297.0).to_string(),
+            "0 0 210 297"
+        );
         assert_eq!(StBox::A4_MM, StBox::new(0.0, 0.0, 210.0, 297.0));
         // 数量不符 / 非数字分支。
         assert!("1 2 3".parse::<StPos>().is_err());
@@ -519,7 +519,10 @@ mod tests {
     #[test]
     fn serde_round_trips() {
         // 覆盖 Serialize（collect_str）与 Deserialize（parse）两条路径。
-        assert_eq!(serde_json::to_string(&StLoc::from("a/b")).unwrap(), "\"a/b\"");
+        assert_eq!(
+            serde_json::to_string(&StLoc::from("a/b")).unwrap(),
+            "\"a/b\""
+        );
         assert_eq!(
             serde_json::from_str::<StLoc>("\"a/b\"").unwrap(),
             StLoc::from("a/b")
@@ -527,8 +530,14 @@ mod tests {
         assert_eq!(serde_json::to_string(&StId(7)).unwrap(), "\"7\"");
         assert_eq!(serde_json::from_str::<StId>("\"7\"").unwrap(), StId(7));
         assert_eq!(serde_json::to_string(&StRefId(7)).unwrap(), "\"7\"");
-        assert_eq!(serde_json::from_str::<StRefId>("\"7\"").unwrap(), StRefId(7));
-        assert_eq!(serde_json::to_string(&StPos::new(1.0, 2.0)).unwrap(), "\"1 2\"");
+        assert_eq!(
+            serde_json::from_str::<StRefId>("\"7\"").unwrap(),
+            StRefId(7)
+        );
+        assert_eq!(
+            serde_json::to_string(&StPos::new(1.0, 2.0)).unwrap(),
+            "\"1 2\""
+        );
         assert_eq!(
             serde_json::from_str::<StPos>("\"1 2\"").unwrap(),
             StPos::new(1.0, 2.0)
@@ -544,7 +553,9 @@ mod tests {
         let arr: StArray<f64> = "1 2".parse().unwrap();
         assert_eq!(serde_json::to_string(&arr).unwrap(), "\"1 2\"");
         assert_eq!(
-            serde_json::from_str::<StArray<f64>>("\"1 2\"").unwrap().as_slice(),
+            serde_json::from_str::<StArray<f64>>("\"1 2\"")
+                .unwrap()
+                .as_slice(),
             &[1.0, 2.0]
         );
         // 反序列化失败分支（de::Error::custom）。
