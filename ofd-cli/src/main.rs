@@ -4,10 +4,12 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use std::collections::BTreeMap;
+
 use clap::{Parser, Subcommand};
 use ofd_core::render::{RenderOptions, image_format_from_ext};
 use ofd_core::verify::{RefStatus, SigVerdict, check_path};
-use ofd_core::{OfdReader, Result};
+use ofd_core::{OfdPackage, OfdReader, Result};
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
@@ -25,6 +27,14 @@ enum Command {
     Info {
         /// 待解析的 OFD 文件路径。
         file: PathBuf,
+    },
+    /// 以 Linux tree 风格列出 OFD 包内所有文件。
+    Tree {
+        /// 待查看的 OFD 文件路径。
+        file: PathBuf,
+        /// 在每个文件后显示其未压缩字节大小。
+        #[arg(long)]
+        size: bool,
     },
     /// 校验一个或多个 OFD 文件是否符合规范（含数字签名完整性），并列出不合规文件。
     Check {
@@ -63,6 +73,7 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
         Command::Info { file } => info_cmd(&file),
+        Command::Tree { file, size } => tree_cmd(&file, size),
         Command::Check { files } => return check_cmd(&files),
         Command::Render {
             file,
@@ -262,6 +273,89 @@ fn info_cmd(path: &Path) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// 包内文件树的一个节点：目录含子节点，文件为叶子。
+#[derive(Default)]
+struct Node {
+    /// 子节点，按名称字典序排列（与 Linux `tree` 一致）。
+    children: BTreeMap<String, Node>,
+    /// 是否为文件（叶子）。
+    is_file: bool,
+    /// 文件未压缩字节大小（仅 `--size` 时填充）。
+    size: Option<u64>,
+}
+
+/// `tree` 子命令：以 Linux `tree` 风格打印 OFD 包内所有条目的层级结构。
+///
+/// OFD 的 ZIP 容器仅含文件条目、无显式目录条目，故从扁平路径推导目录层级。
+/// 输出直接写 stdout（不经 `tracing`），以保持树形对齐。
+fn tree_cmd(path: &Path, size: bool) -> Result<()> {
+    let mut package = OfdPackage::open(path)?;
+
+    // 从扁平条目路径构建目录树。
+    let mut root = Node::default();
+    for name in package.entries() {
+        let mut node = &mut root;
+        let mut parts = name.split('/').filter(|s| !s.is_empty()).peekable();
+        while let Some(part) = parts.next() {
+            let is_leaf = parts.peek().is_none();
+            node = node.children.entry(part.to_string()).or_default();
+            if is_leaf {
+                node.is_file = true;
+            }
+        }
+    }
+
+    // 需要大小时再读取各条目内容获取未压缩长度。
+    if size {
+        for name in package.entries() {
+            let len = package.read(&name)?.len() as u64;
+            if let Some(node) = find_node(&mut root, &name) {
+                node.size = Some(len);
+            }
+        }
+    }
+
+    // 根行打印文件路径本身，随后递归打印各级条目。
+    println!("{}", path.display());
+    let mut dirs = 0usize;
+    let mut files = 0usize;
+    print_children(&root, "", &mut dirs, &mut files);
+    println!("\n{dirs} 个目录，{files} 个文件");
+    Ok(())
+}
+
+/// 按 `/` 分隔路径定位到对应节点（供填充大小用）。
+fn find_node<'a>(root: &'a mut Node, path: &str) -> Option<&'a mut Node> {
+    let mut node = root;
+    for part in path.split('/').filter(|s| !s.is_empty()) {
+        node = node.children.get_mut(part)?;
+    }
+    Some(node)
+}
+
+/// 递归打印某节点的子节点，`prefix` 为当前层级的前导连接线。
+fn print_children(node: &Node, prefix: &str, dirs: &mut usize, files: &mut usize) {
+    let total = node.children.len();
+    for (i, (name, child)) in node.children.iter().enumerate() {
+        let last = i + 1 == total;
+        let branch = if last { "└── " } else { "├── " };
+
+        if child.is_file {
+            *files += 1;
+            match child.size {
+                Some(sz) => println!("{prefix}{branch}{name} ({sz} B)"),
+                None => println!("{prefix}{branch}{name}"),
+            }
+        } else {
+            *dirs += 1;
+            println!("{prefix}{branch}{name}");
+        }
+
+        let child_prefix = format!("{prefix}{}", if last { "    " } else { "│   " });
+        print_children(child, &child_prefix, dirs, files);
+    }
 }
 
 /// 打印 `CT_DocInfo` 的全部字段（缺省项显示 `-`），结构紧凑。
