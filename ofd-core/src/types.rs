@@ -217,6 +217,14 @@ pub struct StBox {
 }
 
 impl StBox {
+    /// A4 纵向页面（210mm × 297mm），用作缺少任何页面区域声明时的兜底尺寸。
+    pub const A4_MM: StBox = StBox {
+        x: 0.0,
+        y: 0.0,
+        width: 210.0,
+        height: 297.0,
+    };
+
     /// 构造一个矩形区域。
     pub fn new(x: f64, y: f64, width: f64, height: f64) -> Self {
         StBox {

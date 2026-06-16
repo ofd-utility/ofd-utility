@@ -236,8 +236,13 @@ fn info_cmd(path: &Path) -> Result<()> {
         let doc = reader.load_document(body)?;
         let cd = &doc.document.common_data;
         info!("  MaxUnitID: {}", cd.max_unit_id);
-        let pb = &cd.page_area.physical_box;
-        info!("  默认页面物理区域: {} x {} (mm)", pb.width, pb.height);
+        match cd.page_area.as_ref() {
+            Some(pa) => {
+                let pb = &pa.physical_box;
+                info!("  默认页面物理区域: {} x {} (mm)", pb.width, pb.height);
+            }
+            None => info!("  默认页面物理区域: 未声明（按各页 Area 或 A4 兜底）"),
+        }
         info!("  模板页数: {}", doc.template_pages().len());
         info!("  公共资源: {}", doc.public_res().len());
         info!("  文档资源: {}", doc.document_res().len());

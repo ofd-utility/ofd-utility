@@ -55,9 +55,14 @@ pub struct CommonData {
     /// 当前文档中所有对象使用标识的最大值，初始值为 0（必选）。
     #[serde(rename = "MaxUnitID")]
     pub max_unit_id: StId,
-    /// 指定该文档页面区域的默认大小和位置（必选）。
+    /// 指定该文档页面区域的默认大小和位置。
+    ///
+    /// GB/T 33190—2016 表 6 将其列为必选，但部分开票系统生成的发票 OFD 省略了
+    /// 文档级 `PageArea`，转而仅在每页的 `Page/Area`（[`crate::PageObject::area`]）
+    /// 声明页面区域。为兼容此类文件，这里放宽为可选；缺省时应回退到本页 `Area`，
+    /// 仍缺省则用 A4（见 [`crate::types::StBox::A4_MM`]）。
     #[serde(rename = "PageArea")]
-    pub page_area: CtPageArea,
+    pub page_area: Option<CtPageArea>,
     /// 公共资源序列，每个节点指向包内的一个资源描述文档（可选）。
     #[serde(rename = "PublicRes", default)]
     pub public_res: Vec<StLoc>,
@@ -219,4 +224,34 @@ pub struct CtOutlineElem {
     /// 子大纲节点，层层嵌套形成树状结构（可选）。
     #[serde(rename = "OutlineElem", default)]
     pub children: Vec<CtOutlineElem>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CommonData;
+
+    /// `PublicRes` / `DocumentRes` are repeatable sequences (表 6). Some 开票系统
+    /// emit them interleaved (`PublicRes … DocumentRes … PublicRes`). Without
+    /// quick-xml's `overlapped-lists` feature this fails with
+    /// `duplicate field PublicRes`; with it the non-consecutive repeats fold
+    /// into the `Vec` as intended.
+    #[test]
+    fn interleaved_public_res_collects_into_vec() {
+        let xml = r#"<ofd:CommonData xmlns:ofd="http://www.ofdspec.org/2016">
+            <ofd:MaxUnitID>10</ofd:MaxUnitID>
+            <ofd:PublicRes>PublicRes.xml</ofd:PublicRes>
+            <ofd:DocumentRes>DocumentRes.xml</ofd:DocumentRes>
+            <ofd:PublicRes>PublicRes_2.xml</ofd:PublicRes>
+        </ofd:CommonData>"#;
+
+        let cd: CommonData = quick_xml::de::from_str(xml).expect("parse CommonData");
+        assert_eq!(
+            cd.public_res
+                .iter()
+                .map(|l| l.0.as_str())
+                .collect::<Vec<_>>(),
+            ["PublicRes.xml", "PublicRes_2.xml"],
+        );
+        assert_eq!(cd.document_res.len(), 1);
+    }
 }

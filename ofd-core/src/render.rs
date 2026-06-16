@@ -383,12 +383,13 @@ impl<R: Read + Seek> OfdReader<R> {
             }
         }
 
-        // 页面物理区域（优先本页 Area，否则文档默认）。
+        // 页面物理区域（优先本页 Area，其次文档默认 PageArea，仍缺省用 A4）。
         let area = page
             .area
             .as_ref()
+            .or(doc.document.common_data.page_area.as_ref())
             .map(|a| a.physical_box)
-            .unwrap_or(doc.document.common_data.page_area.physical_box);
+            .unwrap_or(StBox::A4_MM);
 
         let scale = options.dpi / MM_PER_INCH;
         let width_px = ((area.width * scale).round() as i64).max(1);

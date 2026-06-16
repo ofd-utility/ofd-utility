@@ -138,7 +138,13 @@ fn parse_document_and_pages() {
     assert_eq!(doc.base, "Doc_0");
     assert_eq!(doc.document.common_data.max_unit_id.value(), 1000);
 
-    let pb = doc.document.common_data.page_area.physical_box;
+    let pb = doc
+        .document
+        .common_data
+        .page_area
+        .as_ref()
+        .expect("fixture declares CommonData/PageArea")
+        .physical_box;
     assert_eq!(pb.width, 210.0);
     assert_eq!(pb.height, 297.0);
 
@@ -463,4 +469,23 @@ fn verify_signature_integrity() {
         .collect();
     assert_eq!(failed, vec!["/Doc_0/Document.xml"]);
     assert!(!report.conforms());
+}
+
+/// 回归: 部分开票系统 (如苏豪 swformsdk 的数电普通发票) 生成的 OFD 省略了文档级
+/// `CommonData/PageArea`, 仅在每页 `Page/Area` 声明页面区域。GB/T 33190 表 6 将其
+/// 列为必选, 但这类文件确实存在, 解析时不应再因缺字段而整体失败 ——
+/// `page_area` 放宽为 `Option`, 缺省时回退到本页 `Area` (见 render.rs) 或 A4。
+#[test]
+fn parse_common_data_without_page_area() {
+    use ofd_core::model::document::Document;
+
+    // CommonData 无 PageArea, 且字段顺序与规范不同 (PageArea 在真实样本里常排在
+    // MaxUnitID 之前)。
+    let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<ofd:Document xmlns:ofd="http://www.ofdspec.org/2016"><ofd:CommonData><ofd:MaxUnitID>6956</ofd:MaxUnitID><ofd:PublicRes>PublicRes.xml</ofd:PublicRes><ofd:DocumentRes>DocumentRes.xml</ofd:DocumentRes></ofd:CommonData><ofd:Pages><ofd:Page ID="61" BaseLoc="Pages/Page_0/Content.xml"/></ofd:Pages></ofd:Document>"#;
+
+    let doc: Document = quick_xml::de::from_str(xml).expect("missing PageArea must still parse");
+    assert!(doc.common_data.page_area.is_none());
+    assert_eq!(doc.common_data.max_unit_id.value(), 6956);
+    assert_eq!(doc.pages.pages.len(), 1);
 }
