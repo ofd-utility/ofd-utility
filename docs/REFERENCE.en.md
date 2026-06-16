@@ -16,6 +16,7 @@ Quick reference for the `ofd-core` public API. Spec clauses refer to **GB/T 3319
 | [`render`](#module-render) | Render pages to images | 8.5 |
 | [`verify`](#module-verify) | Conformance + signature-integrity checking | ch. 7, 18 |
 | [`crypto`](#module-crypto) | SM3 hashing and Base64 | GB/T 32905—2016 |
+| [`xmlfmt`](#module-xmlfmt) | XML pretty-printing | — |
 | [`error`](#module-error) | Error types | — |
 
 The top-level entry point is [`OfdReader`](#ofdreader), which wraps the container and model and exposes high-level loading, rendering and validation methods.
@@ -169,6 +170,18 @@ Self-contained SM-series hashing and encoding, used by signature-integrity check
 | `base64_encode(data: &[u8]) -> String` | Standard Base64 encoding |
 
 > SM2 signature verification is not implemented; digest computation only.
+
+---
+
+## Module `xmlfmt`
+
+XML pretty-printing: reflow compact (unindented, possibly single-line) parts into a 2-space-indented multi-line form, preserving declarations, comments, CDATA and other nodes. `ofd-cli cat` uses this to print XML entries by default.
+
+| Function | Description |
+| --- | --- |
+| `pretty_xml(input: &str) -> Result<String>` | Reflow XML text; returns `OfdError::Structure` on invalid input |
+
+> Re-exported at the top level as `ofd_core::pretty_xml`.
 
 ---
 

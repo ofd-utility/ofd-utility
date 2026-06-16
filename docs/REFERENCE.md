@@ -16,6 +16,7 @@
 | [`render`](#模块-render) | 页面渲染为图片 | 8.5 |
 | [`verify`](#模块-verify) | 规范符合性 + 签名完整性校验 | 7、18 章 |
 | [`crypto`](#模块-crypto) | SM3 杂凑与 Base64 | GB/T 32905—2016 |
+| [`xmlfmt`](#模块-xmlfmt) | XML 重排美化 | — |
 | [`error`](#模块-error) | 错误类型 | — |
 
 顶层入口是 [`OfdReader`](#ofdreader)，封装容器与模型，提供高层装载与渲染、校验方法。
@@ -169,6 +170,18 @@ XML 数据模型（第 7 章），按部件分子模块。下表列主要导出�
 | `base64_encode(data: &[u8]) -> String` | 标准 Base64 编码 |
 
 > 不实现 SM2 验签，仅做摘要计算。
+
+---
+
+## 模块 `xmlfmt`
+
+XML 美化：将紧凑（无缩进、可能单行）的部件重排为 2 空格缩进的多行形式，保留声明、注释、CDATA 等节点。`ofd-cli cat` 默认即以此打印 XML 条目。
+
+| 函数 | 说明 |
+| --- | --- |
+| `pretty_xml(input: &str) -> Result<String>` | 重排 XML 文本；输入非法时返回 `OfdError::Structure` |
+
+> 顶层以 `ofd_core::pretty_xml` 重导出。
 
 ---
 

@@ -59,13 +59,26 @@ cargo install --path ofd-cli
 # 1) 查看 OFD 文件的基础结构信息
 ofd-cli info sample.ofd
 
-# 2) 校验一个或多个 OFD 文件是否符合规范（含签名完整性），列出不合规文件
+# 2) 以 Linux tree 风格列出包内所有文件（--size 附带未压缩字节大小）
+ofd-cli tree sample.ofd
+ofd-cli tree sample.ofd --size
+
+# 3) 输出包内匹配正则路径的条目内容
+#    XML 默认重排美化后打印到 stdout（--raw 输出原始源文件），其它类型导出到当前目录
+ofd-cli cat sample.ofd 'OFD\.xml'
+ofd-cli cat sample.ofd '\.xml$' --raw
+
+# 4) 校验一个或多个 OFD 文件是否符合规范（含签名完整性），列出不合规文件
 ofd-cli check a.ofd b.ofd c.ofd
 
-# 3) 将各页渲染为图片输出到目录（默认 150 DPI、PNG）
+# 5) 将各页渲染为图片输出到目录（默认 150 DPI、PNG）
 ofd-cli render sample.ofd ./out
 ofd-cli render sample.ofd ./out --dpi 300 --format jpg --prefix invoice
 ```
+
+`tree` 从扁平的 ZIP 条目推导目录层级，输出末尾汇总目录数与文件数。
+
+`cat` 的 `pattern` 为非锚定正则，对每个包内条目路径做子串匹配；无匹配时以非零状态退出。
 
 `render` 输出文件名形如 `<前缀>_doc<文档序号>_page<页序号>.<格式>`，默认前缀为 `ofd2img-<渲染时刻 yyyyMMddHHmmss>`。
 
@@ -138,7 +151,7 @@ ofd-tools/
 │   │   ├── types.rs     # 基础数据类型（7.3）
 │   │   └── error.rs     # 错误类型
 │   └── tests/           # 端到端解析测试
-├── ofd-cli/             # 命令行工具（info / check / render）
+├── ofd-cli/             # 命令行工具（info / tree / cat / check / render）
 └── misc/specification/  # GB/T 33190—2016 规范原文
 ```
 

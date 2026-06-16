@@ -59,13 +59,27 @@ cargo install --path ofd-cli
 # 1) Print the basic structure of an OFD file
 ofd-cli info sample.ofd
 
-# 2) Validate one or more OFD files (incl. signature integrity); failing files are listed
+# 2) List every file in the package, Linux `tree` style (--size appends uncompressed byte sizes)
+ofd-cli tree sample.ofd
+ofd-cli tree sample.ofd --size
+
+# 3) Print the content of entries whose path matches a regex
+#    XML is pretty-printed to stdout by default (--raw prints the original source);
+#    other types are exported to the current directory
+ofd-cli cat sample.ofd 'OFD\.xml'
+ofd-cli cat sample.ofd '\.xml$' --raw
+
+# 4) Validate one or more OFD files (incl. signature integrity); failing files are listed
 ofd-cli check a.ofd b.ofd c.ofd
 
-# 3) Render every page to images in a directory (default 150 DPI, PNG)
+# 5) Render every page to images in a directory (default 150 DPI, PNG)
 ofd-cli render sample.ofd ./out
 ofd-cli render sample.ofd ./out --dpi 300 --format jpg --prefix invoice
 ```
+
+`tree` derives the directory hierarchy from the flat ZIP entries and prints a directory / file count summary at the end.
+
+`cat`'s `pattern` is an unanchored regex matched as a substring against every in-package entry path; it exits non-zero when nothing matches.
 
 `render` produces filenames like `<prefix>_doc<doc-index>_page<page-index>.<format>`; the default prefix is `ofd2img-<render-time yyyyMMddHHmmss>`.
 
@@ -138,7 +152,7 @@ ofd-tools/
 │   │   ├── types.rs     # basic data types (7.3)
 │   │   └── error.rs     # error types
 │   └── tests/           # end-to-end parsing tests
-├── ofd-cli/             # command-line tool (info / check / render)
+├── ofd-cli/             # command-line tool (info / tree / cat / check / render)
 └── misc/specification/  # GB/T 33190—2016 spec text
 ```
 
