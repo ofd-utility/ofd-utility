@@ -679,7 +679,7 @@ dependencies = [
 
 [[package]]
 name = "ofd-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "assert_cmd",
  "chrono",
@@ -695,7 +695,7 @@ dependencies = [
 
 [[package]]
 name = "ofd-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "fontdb",
  "image",
