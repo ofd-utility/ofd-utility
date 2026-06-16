@@ -16,3 +16,10 @@ clap = { version = "4", features = ["derive"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+# 集成测试：assert_cmd 驱动真实二进制，tempfile/zip 构造 .ofd 夹具。
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
+zip = { version = "2", default-features = false, features = ["deflate"] }

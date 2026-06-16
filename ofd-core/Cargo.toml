@@ -30,3 +30,9 @@ image = { version = "0.25", default-features = false, features = [
     "webp",
 ] }
 fontdb = "0.23"
+
+[dev-dependencies]
+# 仅用于测试中对基础类型做 serde 序列化/反序列化往返校验。
+serde_json = "1"
+# 渲染集成测试中生成内嵌位图（PNG）夹具。
+image = { version = "0.25", default-features = false, features = ["png"] }

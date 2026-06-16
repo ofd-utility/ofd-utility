@@ -246,3 +246,75 @@ pub struct CtMultiMedia {
     #[serde(rename = "MediaFile")]
     pub media_file: StLoc,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 构造一个含全部资源组类型的 `Res`，使每个迭代器都同时遇到命中分支与
+    /// `_ => None` 跳过分支。
+    fn full_res() -> Res {
+        Res {
+            base_loc: StLoc::from("Res"),
+            children: vec![
+                ResChild::ColorSpaces(ColorSpaces {
+                    color_spaces: vec![CtColorSpace {
+                        id: StId(1),
+                        cs_type: "RGB".into(),
+                        ..Default::default()
+                    }],
+                }),
+                ResChild::DrawParams(DrawParams {
+                    draw_params: vec![CtDrawParam {
+                        id: StId(2),
+                        ..Default::default()
+                    }],
+                }),
+                ResChild::Fonts(Fonts {
+                    fonts: vec![CtFont {
+                        id: StId(3),
+                        font_name: "宋体".into(),
+                        ..Default::default()
+                    }],
+                }),
+                ResChild::MultiMedias(MultiMedias {
+                    multi_medias: vec![CtMultiMedia {
+                        id: StId(4),
+                        media_type: "Image".into(),
+                        media_file: StLoc::from("a.png"),
+                        ..Default::default()
+                    }],
+                }),
+                ResChild::CompositeGraphicUnits(CompositeGraphicUnits {
+                    units: vec![CtVectorG::default()],
+                }),
+            ],
+        }
+    }
+
+    #[test]
+    fn iterators_flatten_each_group() {
+        let res = full_res();
+        assert_eq!(res.color_spaces().count(), 1);
+        assert_eq!(res.draw_params().count(), 1);
+        assert_eq!(res.fonts().count(), 1);
+        assert_eq!(res.multi_medias().count(), 1);
+        assert_eq!(res.composite_graphic_units().count(), 1);
+        // 命中具体项，确认扁平化取到内层元素。
+        assert_eq!(res.fonts().next().unwrap().font_name, "宋体");
+        assert_eq!(res.color_spaces().next().unwrap().cs_type, "RGB");
+    }
+
+    #[test]
+    fn iterators_skip_when_group_absent() {
+        // 仅含字型组：其余迭代器走 `_ => None` 分支返回空。
+        let res = Res {
+            base_loc: StLoc::default(),
+            children: vec![ResChild::Fonts(Fonts::default())],
+        };
+        assert_eq!(res.color_spaces().count(), 0);
+        assert_eq!(res.draw_params().count(), 0);
+        assert_eq!(res.multi_medias().count(), 0);
+        assert_eq!(res.composite_graphic_units().count(), 0);
+    }
+}

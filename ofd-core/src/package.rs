@@ -89,3 +89,98 @@ impl<R: Read + Seek> OfdPackage<R> {
 fn normalize(path: &str) -> String {
     path.trim_start_matches('/').to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Cursor, Write};
+    use zip::ZipWriter;
+    use zip::write::SimpleFileOptions;
+
+    /// 构造一个含若干条目的内存 ZIP。
+    fn build_zip(files: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut buf = Vec::new();
+        {
+            let mut zip = ZipWriter::new(Cursor::new(&mut buf));
+            let opts =
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+            for (name, content) in files {
+                zip.start_file(*name, opts).unwrap();
+                zip.write_all(content).unwrap();
+            }
+            zip.finish().unwrap();
+        }
+        buf
+    }
+
+    fn pkg(files: &[(&str, &[u8])]) -> OfdPackage<Cursor<Vec<u8>>> {
+        OfdPackage::new(Cursor::new(build_zip(files))).unwrap()
+    }
+
+    #[test]
+    fn normalize_strips_leading_slash() {
+        assert_eq!(normalize("/OFD.xml"), "OFD.xml");
+        assert_eq!(normalize("Doc_0/Document.xml"), "Doc_0/Document.xml");
+    }
+
+    #[test]
+    fn read_hit_and_miss() {
+        let mut p = pkg(&[("OFD.xml", b"hello")]);
+        // 前导 `/` 归一化后命中。
+        assert_eq!(p.read("/OFD.xml").unwrap(), b"hello");
+        // 未找到条目走 EntryNotFound 分支。
+        let err = p.read("missing.xml").unwrap_err();
+        assert!(matches!(err, OfdError::EntryNotFound(_)));
+    }
+
+    #[test]
+    fn read_to_string_utf8_and_invalid() {
+        let mut p = pkg(&[("a.txt", "文本".as_bytes()), ("bad.bin", &[0xff, 0xfe])]);
+        assert_eq!(p.read_to_string("a.txt").unwrap(), "文本");
+        // 非法 UTF-8 走 Structure 错误分支。
+        assert!(matches!(
+            p.read_to_string("bad.bin").unwrap_err(),
+            OfdError::Structure(_)
+        ));
+    }
+
+    #[test]
+    fn parse_ok_and_xml_error() {
+        #[derive(serde::Deserialize, PartialEq, Debug)]
+        struct Doc {
+            #[serde(rename = "@v")]
+            v: String,
+        }
+        let mut p = pkg(&[
+            ("ok.xml", br#"<Doc v="1"/>"#),
+            ("bad.xml", b"<Doc"),
+        ]);
+        assert_eq!(p.parse::<Doc>("ok.xml").unwrap(), Doc { v: "1".into() });
+        // XML 解析失败分支。
+        assert!(p.parse::<Doc>("bad.xml").is_err());
+    }
+
+    #[test]
+    fn contains_entries_len_empty() {
+        let p = pkg(&[("OFD.xml", b"x"), ("Doc_0/Document.xml", b"y")]);
+        assert!(p.contains("/OFD.xml"));
+        assert!(!p.contains("nope.xml"));
+        let mut entries = p.entries();
+        entries.sort();
+        assert_eq!(entries, vec!["Doc_0/Document.xml", "OFD.xml"]);
+        assert_eq!(p.len(), 2);
+        assert!(!p.is_empty());
+        assert!(pkg(&[]).is_empty());
+    }
+
+    #[test]
+    fn open_missing_file_errors() {
+        // File::open 失败走 `?` 的 Io 错误分支。
+        assert!(OfdPackage::open("/nonexistent/path/does-not-exist.ofd").is_err());
+    }
+
+    #[test]
+    fn new_rejects_non_zip() {
+        assert!(OfdPackage::new(Cursor::new(b"not a zip".to_vec())).is_err());
+    }
+}

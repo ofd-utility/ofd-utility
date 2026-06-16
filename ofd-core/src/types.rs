@@ -457,4 +457,97 @@ mod tests {
             "Doc_0/Res/a.png"
         );
     }
+
+    #[test]
+    fn st_loc_accessors() {
+        let loc = StLoc::from("/Doc_0/Res/a.png");
+        assert_eq!(loc.as_str(), "/Doc_0/Res/a.png");
+        assert!(loc.is_absolute());
+        assert!(!StLoc::from("Res/a.png").is_absolute());
+        // StLoc::resolve 委托 resolve_path：绝对路径忽略 base。
+        assert_eq!(loc.resolve("Doc_0/Pages"), "Doc_0/Res/a.png");
+        assert_eq!(
+            StLoc::from("a.png").resolve("Doc_0/Res"),
+            "Doc_0/Res/a.png"
+        );
+        // FromStr 与默认值。
+        assert_eq!("x/y".parse::<StLoc>().unwrap(), StLoc("x/y".into()));
+        assert_eq!(StLoc::default().as_str(), "");
+    }
+
+    #[test]
+    fn st_id_and_ref_id() {
+        let id = StId(42);
+        assert_eq!(id.value(), 42);
+        assert_eq!(id.to_string(), "42");
+        let r = StRefId(42);
+        assert_eq!(r.value(), 42);
+        assert_eq!(r.as_id(), StId(42));
+        assert_eq!(r.to_string(), "42");
+    }
+
+    #[test]
+    fn st_pos_and_box_display() {
+        assert_eq!(StPos::new(1.5, 2.0).to_string(), "1.5 2");
+        assert_eq!(StBox::new(0.0, 0.0, 210.0, 297.0).to_string(), "0 0 210 297");
+        assert_eq!(StBox::A4_MM, StBox::new(0.0, 0.0, 210.0, 297.0));
+        // 数量不符 / 非数字分支。
+        assert!("1 2 3".parse::<StPos>().is_err());
+        assert!("a b".parse::<StPos>().is_err());
+    }
+
+    #[test]
+    fn st_array_methods() {
+        let empty: StArray<f64> = StArray::default();
+        assert!(empty.is_empty());
+        assert_eq!(empty.len(), 0);
+        let a: StArray<f64> = "1 2 3".parse().unwrap();
+        assert_eq!(a.len(), 3);
+        assert!(!a.is_empty());
+        assert_eq!(a.as_slice(), &[1.0, 2.0, 3.0]);
+        assert_eq!(a.to_string(), "1 2 3");
+        // 元素解析失败分支。
+        assert!("1 x 3".parse::<StArray<f64>>().is_err());
+    }
+
+    #[test]
+    fn parent_dir_branches() {
+        assert_eq!(parent_dir("Doc_0/Pages/Content.xml"), "Doc_0/Pages");
+        assert_eq!(parent_dir("OFD.xml"), "");
+    }
+
+    #[test]
+    fn serde_round_trips() {
+        // 覆盖 Serialize（collect_str）与 Deserialize（parse）两条路径。
+        assert_eq!(serde_json::to_string(&StLoc::from("a/b")).unwrap(), "\"a/b\"");
+        assert_eq!(
+            serde_json::from_str::<StLoc>("\"a/b\"").unwrap(),
+            StLoc::from("a/b")
+        );
+        assert_eq!(serde_json::to_string(&StId(7)).unwrap(), "\"7\"");
+        assert_eq!(serde_json::from_str::<StId>("\"7\"").unwrap(), StId(7));
+        assert_eq!(serde_json::to_string(&StRefId(7)).unwrap(), "\"7\"");
+        assert_eq!(serde_json::from_str::<StRefId>("\"7\"").unwrap(), StRefId(7));
+        assert_eq!(serde_json::to_string(&StPos::new(1.0, 2.0)).unwrap(), "\"1 2\"");
+        assert_eq!(
+            serde_json::from_str::<StPos>("\"1 2\"").unwrap(),
+            StPos::new(1.0, 2.0)
+        );
+        assert_eq!(
+            serde_json::to_string(&StBox::new(0.0, 0.0, 1.0, 1.0)).unwrap(),
+            "\"0 0 1 1\""
+        );
+        assert_eq!(
+            serde_json::from_str::<StBox>("\"0 0 1 1\"").unwrap(),
+            StBox::new(0.0, 0.0, 1.0, 1.0)
+        );
+        let arr: StArray<f64> = "1 2".parse().unwrap();
+        assert_eq!(serde_json::to_string(&arr).unwrap(), "\"1 2\"");
+        assert_eq!(
+            serde_json::from_str::<StArray<f64>>("\"1 2\"").unwrap().as_slice(),
+            &[1.0, 2.0]
+        );
+        // 反序列化失败分支（de::Error::custom）。
+        assert!(serde_json::from_str::<StBox>("\"0 0 0 0\"").is_err());
+    }
 }

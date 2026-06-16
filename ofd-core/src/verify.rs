@@ -360,3 +360,94 @@ fn check_structure<R: Read + Seek>(reader: &mut OfdReader<R>, report: &mut Check
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ref_check(status: RefStatus) -> RefCheck {
+        RefCheck {
+            file_ref: "Doc_0/Document.xml".to_string(),
+            status,
+        }
+    }
+
+    fn report_with(method: CheckMethod, statuses: Vec<RefStatus>) -> SignatureReport {
+        SignatureReport {
+            id: StId(1),
+            sig_type: "Seal".to_string(),
+            base_loc: "Doc_0/Signs/Sign_0/Signature.xml".to_string(),
+            method,
+            references: statuses.into_iter().map(ref_check).collect(),
+        }
+    }
+
+    #[test]
+    fn check_method_from_oid_branches() {
+        assert_eq!(CheckMethod::from_oid(None), CheckMethod::Sm3);
+        assert_eq!(CheckMethod::from_oid(Some("")), CheckMethod::Sm3);
+        assert_eq!(CheckMethod::from_oid(Some("  ")), CheckMethod::Sm3);
+        assert_eq!(CheckMethod::from_oid(Some(OID_SM3)), CheckMethod::Sm3);
+        assert_eq!(
+            CheckMethod::from_oid(Some("1.2.840.113549")),
+            CheckMethod::Unsupported("1.2.840.113549".to_string())
+        );
+    }
+
+    #[test]
+    fn verdict_unverified_when_method_unsupported() {
+        let r = report_with(
+            CheckMethod::Unsupported("x".into()),
+            vec![RefStatus::Ok],
+        );
+        assert_eq!(r.verdict(), SigVerdict::Unverified);
+    }
+
+    #[test]
+    fn verdict_valid_and_invalid() {
+        let valid = report_with(CheckMethod::Sm3, vec![RefStatus::Ok, RefStatus::Ok]);
+        assert_eq!(valid.verdict(), SigVerdict::Valid);
+        assert_eq!(valid.failures().count(), 0);
+
+        let invalid = report_with(
+            CheckMethod::Sm3,
+            vec![
+                RefStatus::Ok,
+                RefStatus::Mismatch {
+                    expected: "a".into(),
+                    actual: "b".into(),
+                },
+                RefStatus::Missing,
+                RefStatus::Unsupported,
+            ],
+        );
+        assert_eq!(invalid.verdict(), SigVerdict::Invalid);
+        // failures 仅收 Mismatch 与 Missing。
+        assert_eq!(invalid.failures().count(), 2);
+    }
+
+    #[test]
+    fn check_report_conforms() {
+        // 无问题、无 Invalid 签名 → 符合。
+        let mut report = CheckReport::default();
+        report
+            .signatures
+            .push(report_with(CheckMethod::Sm3, vec![RefStatus::Ok]));
+        // Unverified 不算不合规。
+        report
+            .signatures
+            .push(report_with(CheckMethod::Unsupported("x".into()), vec![RefStatus::Ok]));
+        assert!(report.conforms());
+
+        // 有结构问题 → 不符合。
+        report.problems.push("boom".into());
+        assert!(!report.conforms());
+
+        // 有 Invalid 签名 → 不符合。
+        let mut report2 = CheckReport::default();
+        report2
+            .signatures
+            .push(report_with(CheckMethod::Sm3, vec![RefStatus::Missing]));
+        assert!(!report2.conforms());
+    }
+}

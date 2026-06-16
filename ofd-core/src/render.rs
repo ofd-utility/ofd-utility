@@ -1787,4 +1787,187 @@ mod tests {
         assert_eq!(placed[1].gid.0, b'x' as u16);
         assert_eq!(placed[1].origin, (20.0, 0.0));
     }
+
+    // —— 紧缩路径解析 build_path ——
+
+    #[test]
+    fn build_path_handles_all_commands() {
+        // S/M 起点、L 线段、Q 二次、B 三次、A 弧、C 闭合；逗号亦作分隔。
+        let p = build_path("M 0,0 L 10 0 Q 10 5 5 10 B 4 4 2 2 0 10 A 3 3 0 0 1 0 0 C");
+        assert!(p.is_some());
+    }
+
+    #[test]
+    fn build_path_edge_cases() {
+        // 无任何移动起点 → 空路径。
+        assert!(build_path("L 1 1").is_none());
+        // 操作数不足 → 该段被忽略，最终仍只有 move，finish 返回 None（无线段）。
+        assert!(build_path("M 0 0 L 1").is_none());
+        // 未知操作符被跳过。
+        assert!(build_path("M 0 0 Z 9 L 5 5").is_some());
+        // 空串。
+        assert!(build_path("").is_none());
+    }
+
+    // —— 颜色解析 resolve_color ——
+
+    fn cs(id: u64, ty: &str, bits: Option<u32>) -> CtColorSpace {
+        CtColorSpace {
+            id: StId(id),
+            cs_type: ty.to_string(),
+            bits_per_component: bits,
+            profile: None,
+        }
+    }
+
+    fn res_with_cs(spaces: Vec<CtColorSpace>, default_cs: Option<u64>) -> DocResources {
+        let mut res = DocResources {
+            default_cs,
+            ..Default::default()
+        };
+        for c in spaces {
+            res.color_spaces.insert(c.id.value(), c);
+        }
+        res
+    }
+
+    fn colored(values: Vec<f64>, cs_id: Option<u64>, alpha: Option<u8>) -> CtColor {
+        CtColor {
+            value: Some(StArray(values)),
+            color_space: cs_id.map(StRefId),
+            alpha,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn resolve_color_rgb_default_when_no_space() {
+        // 无颜色空间 → 按 RGB、8 位处理（分量按 max=255 归一化）。
+        let res = DocResources::default();
+        let c = resolve_color(&res, &colored(vec![255.0, 0.0, 0.0], None, None), None);
+        assert_eq!(c, [255, 0, 0, 255]);
+    }
+
+    #[test]
+    fn resolve_color_gray_and_bits() {
+        // Gray，4 位 → max=15；值 15 → 白。
+        let res = res_with_cs(vec![cs(1, "Gray", Some(4))], None);
+        let c = resolve_color(&res, &colored(vec![15.0], Some(1), None), None);
+        assert_eq!(c, [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn resolve_color_cmyk() {
+        // 纯黑 K=1 → 黑。
+        let res = res_with_cs(vec![cs(2, "CMYK", None)], None);
+        let c = resolve_color(&res, &colored(vec![0.0, 0.0, 0.0, 255.0], Some(2), None), None);
+        assert_eq!(&c[..3], &[0, 0, 0]);
+    }
+
+    #[test]
+    fn resolve_color_uses_default_cs_and_alpha_multiplies() {
+        // 颜色未指定空间 → 用文档默认颜色空间（Gray）。
+        let res = res_with_cs(vec![cs(7, "Gray", None)], Some(7));
+        // 对象透明度 128 与颜色透明度 255 相乘 → 128。
+        let c = resolve_color(&res, &colored(vec![255.0], None, Some(255)), Some(128));
+        assert_eq!(c, [255, 255, 255, 128]);
+    }
+
+    #[test]
+    fn resolve_color_empty_values_is_black() {
+        let res = DocResources::default();
+        let c = resolve_color(
+            &res,
+            &CtColor {
+                value: None,
+                ..Default::default()
+            },
+            None,
+        );
+        assert_eq!(c, [0, 0, 0, 255]);
+    }
+
+    // —— 矩阵 Mat ——
+
+    #[test]
+    fn mat_from_array_and_ops() {
+        assert!(Mat::from_array(&[1.0, 0.0, 0.0, 1.0, 0.0, 0.0]).is_some());
+        assert!(Mat::from_array(&[1.0, 2.0]).is_none());
+        // 平移 ∘ 缩放：点 (1,1) → 缩放 2 → (2,2) → 平移 (10,20) → (12,22)。
+        let m = Mat::translate(10.0, 20.0).mul(Mat::scale(2.0, 2.0));
+        assert!((m.a - 2.0).abs() < 1e-9 && (m.e - 10.0).abs() < 1e-9);
+        let sk = Mat::identity().to_skia();
+        assert_eq!(sk.sx, 1.0);
+        // 旋转 90°：a≈0。
+        let r = Mat::rotate(std::f64::consts::FRAC_PI_2);
+        assert!(r.a.abs() < 1e-9);
+    }
+
+    // —— 杂项纯函数 ——
+
+    #[test]
+    fn is_cjk_and_alpha_helpers() {
+        assert!(is_cjk('字'));
+        assert!(is_cjk('，')); // 全角标点
+        assert!(!is_cjk('A'));
+        assert_eq!(alpha_or_opaque(None), 255);
+        assert_eq!(alpha_or_opaque(Some(10)), 10);
+    }
+
+    #[test]
+    fn image_format_mapping() {
+        for (ext, _) in [
+            ("png", ()),
+            ("JPG", ()),
+            ("jpeg", ()),
+            ("bmp", ()),
+            ("tiff", ()),
+            ("tif", ()),
+            ("gif", ()),
+            ("webp", ()),
+        ] {
+            assert!(image_format_from_ext(ext).is_some(), "{ext}");
+        }
+        assert!(image_format_from_ext("xyz").is_none());
+        assert!(format_from_path(Path::new("a/b.PNG")).is_some());
+        assert!(format_from_path(Path::new("noext")).is_none());
+    }
+
+    #[test]
+    fn lookup_system_font_finds_something() {
+        // 取系统字体库中真实存在的某个族名，覆盖“按名称精确匹配成功”分支。
+        let db = system_fonts();
+        let fam = db
+            .faces()
+            .next()
+            .and_then(|f| f.families.first().map(|(n, _)| n.clone()));
+        if let Some(fam) = fam {
+            assert!(lookup_system_font(&fam, "", false, false).is_some());
+        }
+        // 含中文名走 CJK 兜底分支；空名/未知名走通用无衬线兜底分支（仅求执行到，
+        // 是否命中取决于运行环境已装字型，故不强断言）。
+        let _ = lookup_system_font("宋体", "宋体", true, false);
+        let _ = lookup_system_font("ZZ-No-Such-Font", "", false, true);
+        let _ = lookup_system_font("", "", false, false);
+    }
+
+    #[test]
+    fn pixmap_image_roundtrip_and_encode() {
+        let mut img = RgbaImage::new(2, 2);
+        img.put_pixel(0, 0, image::Rgba([255, 0, 0, 255]));
+        img.put_pixel(1, 1, image::Rgba([0, 255, 0, 128]));
+        let pm = rgba_to_pixmap(&img).unwrap();
+        let back = pixmap_to_image(&pm);
+        assert_eq!(back.get_pixel(0, 0).0, [255, 0, 0, 255]);
+        // PNG / JPEG 编码各走一条分支。
+        assert!(!encode_image(img.clone(), ImageFormat::Png).unwrap().is_empty());
+        assert!(!encode_image(img, ImageFormat::Jpeg).unwrap().is_empty());
+    }
+
+    #[test]
+    fn render_options_builders() {
+        let o = RenderOptions::with_dpi(300.0).background(Some([1, 2, 3, 4]));
+        assert_eq!(o.dpi, 300.0);
+        assert_eq!(o.background, Some([1, 2, 3, 4]));
+    }
 }
