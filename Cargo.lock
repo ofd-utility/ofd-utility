@@ -686,6 +686,7 @@ dependencies = [
  "clap",
  "ofd-core",
  "predicates",
+ "regex",
  "tempfile",
  "tracing",
  "tracing-subscriber",

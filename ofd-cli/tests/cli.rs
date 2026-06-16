@@ -316,6 +316,81 @@ fn check_multiple_files_mixed() {
 }
 
 #[test]
+fn cat_pretty_prints_xml() {
+    let path = write_ofd(
+        "cat_xml.ofd",
+        &content_files(&ofd_simple("OFD", "Doc_0/Document.xml"), DOCUMENT_XML),
+    );
+    bin()
+        .args(["cat", path.to_str().unwrap(), "Document\\.xml"])
+        .assert()
+        .success()
+        .stdout(contains("==> Doc_0/Document.xml <=="))
+        .stdout(contains("<ofd:Document"))
+        // 重排后子节点带缩进。
+        .stdout(contains("  <ofd:CommonData>"));
+}
+
+#[test]
+fn cat_raw_outputs_source() {
+    let path = write_ofd(
+        "cat_raw.ofd",
+        &content_files(&ofd_simple("OFD", "Doc_0/Document.xml"), DOCUMENT_XML),
+    );
+    bin()
+        .args(["cat", path.to_str().unwrap(), "Document\\.xml", "--raw"])
+        .assert()
+        .success()
+        // 原始源含其 4 空格缩进片段（未重排为 2 空格）。
+        .stdout(contains("    <ofd:MaxUnitID>1000</ofd:MaxUnitID>"));
+}
+
+#[test]
+fn cat_extracts_binary_to_cwd() {
+    let ofd_xml = ofd_simple("OFD", "Doc_0/Document.xml");
+    let mut files = content_files(&ofd_xml, DOCUMENT_XML);
+    files.push(("Doc_0/Res/img.dat", "BINARY-PAYLOAD"));
+    let path = write_ofd("cat_bin.ofd", &files);
+
+    let dest = tmp_dir().join("img.dat");
+    let _ = std::fs::remove_file(&dest);
+
+    bin()
+        .current_dir(tmp_dir())
+        .args(["cat", path.to_str().unwrap(), "img\\.dat"])
+        .assert()
+        .success()
+        .stdout(contains("已导出"));
+    assert_eq!(std::fs::read_to_string(&dest).unwrap(), "BINARY-PAYLOAD");
+}
+
+#[test]
+fn cat_no_match_fails() {
+    let path = write_ofd(
+        "cat_nomatch.ofd",
+        &content_files(&ofd_simple("OFD", "Doc_0/Document.xml"), DOCUMENT_XML),
+    );
+    bin()
+        .args(["cat", path.to_str().unwrap(), "nonexistent-entry"])
+        .assert()
+        .failure()
+        .stdout(contains("失败"));
+}
+
+#[test]
+fn cat_invalid_regex_fails() {
+    let path = write_ofd(
+        "cat_badre.ofd",
+        &content_files(&ofd_simple("OFD", "Doc_0/Document.xml"), DOCUMENT_XML),
+    );
+    bin()
+        .args(["cat", path.to_str().unwrap(), "["])
+        .assert()
+        .failure()
+        .stdout(contains("无效的正则"));
+}
+
+#[test]
 fn render_writes_images() {
     let path = write_ofd(
         "render.ofd",

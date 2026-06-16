@@ -7,6 +7,7 @@ use std::process::ExitCode;
 use std::collections::BTreeMap;
 
 use clap::{Parser, Subcommand};
+use regex::Regex;
 use ofd_core::render::{RenderOptions, image_format_from_ext};
 use ofd_core::verify::{RefStatus, SigVerdict, check_path};
 use ofd_core::{OfdPackage, OfdReader, Result};
@@ -35,6 +36,16 @@ enum Command {
         /// 在每个文件后显示其未压缩字节大小。
         #[arg(long)]
         size: bool,
+    },
+    /// 输出 OFD 包内匹配正则路径的文件内容（XML 重排格式，其它类型导出到当前目录）。
+    Cat {
+        /// 待查看的 OFD 文件路径。
+        file: PathBuf,
+        /// 匹配包内条目路径的正则表达式（非锚定，子串匹配）。
+        pattern: String,
+        /// 对 XML 输出原始源文件，不重新排版。
+        #[arg(long)]
+        raw: bool,
     },
     /// 校验一个或多个 OFD 文件是否符合规范（含数字签名完整性），并列出不合规文件。
     Check {
@@ -74,6 +85,11 @@ fn main() -> ExitCode {
     let result = match cli.command {
         Command::Info { file } => info_cmd(&file),
         Command::Tree { file, size } => tree_cmd(&file, size),
+        Command::Cat {
+            file,
+            pattern,
+            raw,
+        } => cat_cmd(&file, &pattern, raw),
         Command::Check { files } => return check_cmd(&files),
         Command::Render {
             file,
@@ -356,6 +372,59 @@ fn print_children(node: &Node, prefix: &str, dirs: &mut usize, files: &mut usize
         let child_prefix = format!("{prefix}{}", if last { "    " } else { "│   " });
         print_children(child, &child_prefix, dirs, files);
     }
+}
+
+/// `cat` 子命令：输出包内所有匹配正则路径的条目内容。
+///
+/// `pattern` 为非锚定正则，对包内每个条目路径做子串匹配。XML 条目（扩展名为
+/// `xml`）写 stdout——默认经 [`ofd_core::pretty_xml`] 重排，`raw` 时原样输出；
+/// 其它类型按字节解压并扁平化拷贝到当前工作目录。无匹配时以非零状态退出。
+fn cat_cmd(path: &Path, pattern: &str, raw: bool) -> Result<()> {
+    let re = Regex::new(pattern).map_err(|e| {
+        ofd_core::OfdError::Structure(format!("无效的正则表达式 {pattern:?}: {e}"))
+    })?;
+
+    let mut package = OfdPackage::open(path)?;
+    let matched: Vec<String> = package
+        .entries()
+        .into_iter()
+        .filter(|name| re.is_match(name))
+        .collect();
+
+    if matched.is_empty() {
+        return Err(ofd_core::OfdError::EntryNotFound(format!(
+            "无匹配 {pattern:?} 的条目"
+        )));
+    }
+
+    for name in matched {
+        if is_xml(&name) {
+            let text = package.read_to_string(&name)?;
+            let out = if raw { text } else { ofd_core::pretty_xml(&text)? };
+            // 内容直接写 stdout（不经 tracing），避免日志前缀干扰 XML 缩进对齐。
+            println!("==> {name} <==");
+            println!("{out}");
+        } else {
+            let bytes = package.read(&name)?;
+            let dest = std::env::current_dir()?.join(basename(&name));
+            std::fs::write(&dest, &bytes)?;
+            info!("已导出: {} ({} B) -> {}", name, bytes.len(), dest.display());
+        }
+    }
+
+    Ok(())
+}
+
+/// 判断条目是否为 XML（按扩展名，忽略大小写）。
+fn is_xml(name: &str) -> bool {
+    name.rsplit('.')
+        .next()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("xml"))
+}
+
+/// 取路径最后一段作为文件名（导出时扁平化到当前目录）。
+fn basename(name: &str) -> &str {
+    name.rsplit('/').next().unwrap_or(name)
 }
 
 /// 打印 `CT_DocInfo` 的全部字段（缺省项显示 `-`），结构紧凑。

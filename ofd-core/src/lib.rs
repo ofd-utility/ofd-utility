@@ -33,6 +33,7 @@ pub mod package;
 pub mod render;
 pub mod types;
 pub mod verify;
+pub mod xmlfmt;
 
 use std::fs::File;
 use std::io::{Read, Seek};
@@ -47,6 +48,7 @@ pub use verify::{
     CheckMethod, CheckReport, LoadedSignature, RefStatus, SigVerdict, SignatureReport, check_path,
     check_reader,
 };
+pub use xmlfmt::pretty_xml;
 
 /// 包内主入口文件名（见表 1）。
 pub const ENTRY_OFD: &str = "OFD.xml";
