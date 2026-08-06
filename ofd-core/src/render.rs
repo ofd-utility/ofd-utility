@@ -98,6 +98,9 @@ struct FontRes {
     data: Option<Vec<u8>>,
     /// 字型在字体文件中的字面索引（TTC 集合内的序号；单字体为 0）。
     index: u32,
+    /// 是否为系统字体替代（而非包内内嵌字型）。替代字型的字宽未必与文档排布
+    /// 所依据的原字型一致，绘制时需按字位宽度收紧（见 [`squeeze_to_advance`]）。
+    substituted: bool,
 }
 
 /// 进程级系统字体库，按需加载一次。
@@ -142,12 +145,75 @@ fn is_cjk(ch: char) -> bool {
     )
 }
 
+/// 常见中文字型的拉丁族名前缀（已规范化：小写、去空白与连字符）。
+///
+/// OFD 里引用中文字型时既可能写中文名（“宋体”“楷体”），也可能写 Windows 上的
+/// 拉丁注册名（`SimHei`、`KaiTi`、`DengXian`）。后者不含 CJK 字符，若只按字符区段
+/// 判断就不会触发中文兜底，最终落到往往仅含拉丁字形（甚至根本未安装）的通用族，
+/// 中文随之整体丢失。故显式列出这些名称。
+const CJK_LATIN_FAMILY_PREFIXES: &[&str] = &[
+    "simsun",
+    "nsimsun",
+    "simhei",
+    "simkai",
+    "simfang",
+    "simli",
+    "simyou",
+    "kaiti",
+    "fangsong",
+    "dengxian",
+    "youyuan",
+    "lisu",
+    "stsong",
+    "stkaiti",
+    "stheiti",
+    "stfangsong",
+    "stxihei",
+    "stzhongsong",
+    "msyh",
+    "microsoftyahei",
+    "microsoftjhenghei",
+    "pingfang",
+    "hiraginosansgb",
+    "heitisc",
+    "songtisc",
+    "mingliu",
+    "dfkai",
+];
+
+/// 规范化字型名以便与 [`CJK_LATIN_FAMILY_PREFIXES`] 比对：转小写并去掉空白、
+/// 连字符与下划线（覆盖 `Microsoft YaHei UI`、`KaiTi_GB2312` 等写法）。
+fn normalize_family(s: &str) -> String {
+    s.chars()
+        .filter(|c| !c.is_whitespace() && *c != '-' && *c != '_')
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+/// 判断所引字型是否为中文字型（含 CJK 字符，或命中常见中文字型的拉丁族名）。
+fn is_cjk_family(name: &str, family: &str) -> bool {
+    if name.chars().chain(family.chars()).any(is_cjk) {
+        return true;
+    }
+    [name, family].iter().any(|s| {
+        let norm = normalize_family(s);
+        !norm.is_empty()
+            && CJK_LATIN_FAMILY_PREFIXES
+                .iter()
+                .any(|p| norm.starts_with(p))
+    })
+}
+
 /// 按字型名/族名在系统字体中查找替代字体，返回（字体字节, 字面索引）。
 ///
-/// OFD 常仅以名称引用系统字体（如“宋体”）而不内嵌字型文件；此时按名称匹配。
-/// 匹配失败时：若所引名称含中文字符，先回退到一组确实含中文字形的字型族
-/// （见 [`CJK_FALLBACK_FAMILIES`]），最后才回退到通用无衬线字体，避免中文
-/// 因落到仅含拉丁字形的字型而整体不可见。
+/// OFD 常仅以名称引用系统字体（如“宋体”“SimHei”）而不内嵌字型文件；此时按名称
+/// 匹配。匹配失败时按以下顺序兜底，任一环节命中即返回：
+///
+/// 1. 所引字型为中文字型（见 [`is_cjk_family`]）时，回退到一组确实含中文字形的
+///    字型族（见 [`CJK_FALLBACK_FAMILIES`]），避免落到仅含拉丁字形的字型；
+/// 2. 通用无衬线字体；
+/// 3. 仍未命中（系统未安装通用族所指向的实体字型时会如此）则再试中文字型族，
+///    并最终任取一款已安装字型 —— 字形不同好过整段文字凭空消失。
 fn lookup_system_font(
     name: &str,
     family: &str,
@@ -181,6 +247,12 @@ fn lookup_system_font(
             .and_then(|id| db.with_face_data(id, |data, index| (data.to_vec(), index)))
     };
 
+    let query_cjk_families = || {
+        CJK_FALLBACK_FAMILIES
+            .iter()
+            .find_map(|fam| query_family(fam))
+    };
+
     // 1. 按字型名 → 族名精确匹配。
     for cand in [name, family] {
         if let Some(data) = query_family(cand) {
@@ -188,14 +260,12 @@ fn lookup_system_font(
         }
     }
 
-    // 2. 名称含中文却未命中已安装字型时，回退到任一可用的中文字型，
-    //    以免落到仅含拉丁字形的 sans-serif 导致中文整体缺失。
-    if name.chars().chain(family.chars()).any(is_cjk) {
-        for fam in CJK_FALLBACK_FAMILIES {
-            if let Some(data) = query_family(fam) {
-                return Some(data);
-            }
-        }
+    // 2. 中文字型未命中已安装字型时，回退到任一可用的中文字型，以免落到仅含
+    //    拉丁字形的 sans-serif 导致中文整体缺失。
+    if is_cjk_family(name, family)
+        && let Some(data) = query_cjk_families()
+    {
+        return Some(data);
     }
 
     // 3. 通用无衬线兜底。
@@ -205,8 +275,20 @@ fn lookup_system_font(
         style,
         stretch: fontdb::Stretch::Normal,
     };
-    db.query(&q)
+    if let Some(data) = db
+        .query(&q)
         .and_then(|id| db.with_face_data(id, |data, index| (data.to_vec(), index)))
+    {
+        return Some(data);
+    }
+
+    // 4. 通用族在本机无对应实体字型（fontdb 的 sans-serif 默认指向 Arial 等，
+    //    未必安装）：再试中文字型族（其同样含拉丁字形），最后任取一款已安装
+    //    字型，宁可字形不同也不要整段文字消失。
+    query_cjk_families().or_else(|| {
+        let id = db.faces().next()?.id;
+        db.with_face_data(id, |data, index| (data.to_vec(), index))
+    })
 }
 
 /// 一篇文档渲染所需的资源集合（颜色空间、绘制参数、字型、多媒体）。
@@ -563,6 +645,7 @@ impl<R: Read + Seek> OfdReader<R> {
                 Some(data) => FontRes {
                     data: Some(data),
                     index: 0,
+                    substituted: false,
                 },
                 // 未内嵌字型：回退到同名系统字体，避免文字整体缺失。
                 None => {
@@ -574,7 +657,11 @@ impl<R: Read + Seek> OfdReader<R> {
                     )
                     .map(|(d, i)| (Some(d), i))
                     .unwrap_or((None, 0));
-                    FontRes { data, index }
+                    FontRes {
+                        data,
+                        index,
+                        substituted: true,
+                    }
                 }
             };
             res.fonts.insert(font.id.value(), res_font);
@@ -793,13 +880,16 @@ fn render_path(
     let stroke = obj.stroke.unwrap_or(true);
     let obj_alpha = obj.alpha;
 
-    if fill {
-        let color = obj
+    // 规范表 26：路径对象的填充色缺省为透明色（与表 45 文字对象缺省黑色不同）。
+    // 未给出填充色时若按黑色填充，会把「Fill=true + Stroke=true」的勾边图形（如
+    // 发票上的 ⊗ 标记）涂成实心黑块，掩盖其后的勾边笔迹。
+    if fill
+        && let Some(color) = obj
             .fill_color
             .as_ref()
             .or_else(|| dp.and_then(|d| d.fill_color.as_ref()))
             .map(|c| resolve_color(res, c, obj_alpha))
-            .unwrap_or([0, 0, 0, alpha_or_opaque(obj_alpha)]);
+    {
         let mut paint = Paint::default();
         paint.set_color_rgba8(color[0], color[1], color[2], color[3]);
         paint.anti_alias = true;
@@ -1093,6 +1183,38 @@ struct PlacedGlyph {
     gid: ttf_parser::GlyphId,
     /// 字形原点（对象坐标系，毫米）。
     origin: (f64, f64),
+    /// 由 `DeltaX`/`DeltaY` 给出的本字形可占宽度（毫米）；字形与字符非一一对应
+    /// 或该字形位于一段文字末尾时为 `None`。
+    advance_limit: Option<f64>,
+}
+
+/// 求字形的横向压缩系数，使其字宽不超过 `DeltaX` 给出的字位宽度。
+///
+/// 文字对象的字位由 `DeltaX`/`DeltaY` 逐字给定，其数值是按**文档所引字型**的字宽
+/// 排布的。该字型未内嵌又未安装时只能以系统字型替代，若替代字型的字宽更大（典型
+/// 情形：文档按半角字宽 0.5em 排布 ASCII，替代字型的拉丁字形却是比例字宽），字形
+/// 就会溢出字位、与后一个字重叠。此时按字位宽度横向压缩该字形。
+///
+/// 仅在字型被替代时生效：使用内嵌字型时字宽本就与 `DeltaX` 相符，字宽大于字位则
+/// 是文档有意为之（如叠印），不应改动。只压不放，故不影响有意拉开的字间距。
+fn squeeze_to_advance(
+    face: &ttf_parser::Face,
+    glyph: &PlacedGlyph,
+    scale_x: f64,
+    substituted: bool,
+) -> f64 {
+    if !substituted {
+        return 1.0;
+    }
+    let Some(limit) = glyph.advance_limit.filter(|l| *l > 0.0) else {
+        return 1.0;
+    };
+    let advance = face.glyph_hor_advance(glyph.gid).unwrap_or(0) as f64 * scale_x;
+    if advance > limit {
+        limit / advance
+    } else {
+        1.0
+    }
 }
 
 /// 绘制文字对象：从字型取出字形轮廓，按 `Fill`/`Stroke` 填充或勾边。
@@ -1148,9 +1270,12 @@ fn render_text(
 
     let mut pb = PathBuilder::new();
     for g in &placed {
+        // 替代字型的字宽与原字型不一致时，按 DeltaX 给出的字位宽度横向压缩，
+        // 避免字形互相重叠（见 [`squeeze_to_advance`]）。
+        let gx = scale_x * squeeze_to_advance(&face, g, scale_x, font.substituted);
         // 字体单位（y 向上）→ 对象坐标（y 向下）：缩放并翻转 y，
         // 叠加字符方向旋转，最后平移到字形原点。
-        let glyph_mat = glyph_to_object(g.origin.0, g.origin.1, scale_x, scale_y, char_dir);
+        let glyph_mat = glyph_to_object(g.origin.0, g.origin.1, gx, scale_y, char_dir);
         let mut outliner = Outliner {
             pb: &mut pb,
             m: glyph_mat,
@@ -1199,12 +1324,22 @@ fn render_text(
     }
 }
 
-/// 按规范表 46 求出文字对象内每个字符的绘制点（对象坐标系，毫米）。
+/// 字符流中一个字符的落笔信息。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct PenStep {
+    /// 绘制点（对象坐标系，毫米）。
+    pos: (f64, f64),
+    /// 到同一 `TextCode` 内下一字符的笔步长（毫米），即本字符可占的宽度；
+    /// 该字符为本段最后一个时为 `None`。
+    advance: Option<f64>,
+}
+
+/// 按规范表 46 求出文字对象内每个字符的落笔信息（对象坐标系，毫米）。
 ///
 /// 首字符取 `X`/`Y`，其后按 `DeltaX`/`DeltaY` 在对象 X、Y 轴上累加；`X`/`Y`
-/// 缺省时沿用上一个 `TextCode` 的起绘坐标。返回与字符流一一对应的绘制点序列。
-fn text_code_points(obj: &TextObject) -> Vec<(f64, f64)> {
-    let mut points: Vec<(f64, f64)> = Vec::new();
+/// 缺省时沿用上一个 `TextCode` 的起绘坐标。返回与字符流一一对应的序列。
+fn text_code_points(obj: &TextObject) -> Vec<PenStep> {
+    let mut steps: Vec<PenStep> = Vec::new();
     let mut inherited_x = 0.0_f64;
     let mut inherited_y = 0.0_f64;
     for tc in &obj.text_codes {
@@ -1215,22 +1350,28 @@ fn text_code_points(obj: &TextObject) -> Vec<(f64, f64)> {
         inherited_y = start_y;
         let dx = tc.delta_x.as_deref().map(parse_deltas).unwrap_or_default();
         let dy = tc.delta_y.as_deref().map(parse_deltas).unwrap_or_default();
+        // 表 46：增量个数少于字符数时，末位增量重复适用于其后各字符。
+        let step = |deltas: &[f64], k: usize| -> f64 {
+            deltas
+                .get(k)
+                .copied()
+                .unwrap_or_else(|| deltas.last().copied().unwrap_or(0.0))
+        };
+        let count = text.chars().count();
         let (mut cx, mut cy) = (start_x, start_y);
-        for (i, _) in text.chars().enumerate() {
+        for i in 0..count {
             if i > 0 {
-                cx += dx
-                    .get(i - 1)
-                    .copied()
-                    .unwrap_or_else(|| dx.last().copied().unwrap_or(0.0));
-                cy += dy
-                    .get(i - 1)
-                    .copied()
-                    .unwrap_or_else(|| dy.last().copied().unwrap_or(0.0));
+                cx += step(&dx, i - 1);
+                cy += step(&dy, i - 1);
             }
-            points.push((cx, cy));
+            let advance = (i + 1 < count).then(|| step(&dx, i).hypot(step(&dy, i)));
+            steps.push(PenStep {
+                pos: (cx, cy),
+                advance,
+            });
         }
     }
-    points
+    steps
 }
 
 /// 计算文字对象内全部字形的绘制点与字形索引（对象坐标系，毫米）。
@@ -1269,10 +1410,12 @@ fn place_glyphs(
                     // 字形较字符多时（一对多），多出的字形并置在区间末字符的
                     // 绘制点；字形较字符少时（多对一）则只用前若干个绘制点。
                     let pi = i + j.min(code_count.saturating_sub(1));
-                    if let Some(&origin) = points.get(pi) {
+                    if let Some(&p) = points.get(pi) {
                         out.push(PlacedGlyph {
                             gid: ttf_parser::GlyphId(g as u16),
-                            origin,
+                            origin: p.pos,
+                            // 字形与字符非一一对应，单个字形可占的宽度无从谈起。
+                            advance_limit: None,
                         });
                     }
                 }
@@ -1281,9 +1424,13 @@ fn place_glyphs(
         } else {
             // 无字形变换：按 CMAP 由字符取字形索引（规范 11.4.2 一对一）。
             if let Some(gid) = cmap(chars[i])
-                && let Some(&origin) = points.get(i)
+                && let Some(&p) = points.get(i)
             {
-                out.push(PlacedGlyph { gid, origin });
+                out.push(PlacedGlyph {
+                    gid,
+                    origin: p.pos,
+                    advance_limit: p.advance,
+                });
             }
             i += 1;
         }
@@ -1709,7 +1856,11 @@ mod tests {
             ..Default::default()
         };
         let pts = text_code_points(&obj);
-        assert_eq!(pts, vec![(0.0, 25.0), (10.0, 25.0), (20.0, 25.0)]);
+        let pos: Vec<_> = pts.iter().map(|p| p.pos).collect();
+        assert_eq!(pos, vec![(0.0, 25.0), (10.0, 25.0), (20.0, 25.0)]);
+        // 末字符之后无笔步长；其余字符可占宽度即到下一字符的步长。
+        let adv: Vec<_> = pts.iter().map(|p| p.advance).collect();
+        assert_eq!(adv, vec![Some(10.0), Some(10.0), None]);
     }
 
     /// 表 46：后续 TextCode 省略 X/Y 时沿用上一个 TextCode 的起绘坐标。
@@ -1724,7 +1875,8 @@ mod tests {
             ..Default::default()
         };
         let pts = text_code_points(&obj);
-        assert_eq!(pts, vec![(5.0, 7.0), (5.0, 7.0)]);
+        let pos: Vec<_> = pts.iter().map(|p| p.pos).collect();
+        assert_eq!(pos, vec![(5.0, 7.0), (5.0, 7.0)]);
     }
 
     /// 11.4 一对一：无字形变换时按 CMAP 逐字符取字形，定位于各自绘制点。

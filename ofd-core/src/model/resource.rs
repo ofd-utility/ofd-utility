@@ -21,10 +21,12 @@ use crate::types::{StArray, StId, StLoc};
 /// 方法跨组扁平化遍历其中的资源项。
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Res {
-    /// 定义此资源文件的通用数据存储路径（必选）。
+    /// 定义此资源文件的通用数据存储路径（规范中必选）。
     ///
-    /// 资源文件中各数据文件的默认存储位置以此为基准。
-    #[serde(rename = "@BaseLoc")]
+    /// 资源文件中各数据文件的默认存储位置以此为基准。部分实际产出的 OFD（如税务
+    /// 电子发票的 `PublicRes.xml`）省略该属性，此时按空路径处理，即以资源文件自身
+    /// 所在目录为基准；否则整个资源文件将无法反序列化，导致字型等资源整体丢失。
+    #[serde(rename = "@BaseLoc", default)]
     pub base_loc: StLoc,
     /// 资源组子节点，按在文档中出现的顺序保留（可重复、可交错）。
     #[serde(rename = "$value", default)]
