@@ -7,11 +7,17 @@
 #
 # 选项:
 #   --dry-run        只做打包校验（cargo publish --dry-run），不真正发布
-#   --no-verify      跳过 fmt / clippy / test 等本地检查（不推荐）
+#   --no-verify      跳过 fmt / clippy / test 等本地检查，同时透传 --no-verify
+#                    给 cargo，跳过隔离目录中对全部依赖的验证构建（不推荐用于真发布）
+#   --offline        不访问网络：透传 --offline 给 cargo，并跳过 crates.io 版本
+#                    占用检查。只能与 --dry-run 同用
 #   --no-tag         发布成功后不创建 git tag
 #   --allow-dirty    允许工作区有未提交改动（透传给 cargo / 跳过 git 检查）
 #   -y, --yes        跳过最终确认提示
 #   -h, --help       显示帮助
+#
+# 快速打包校验（秒级，不联网、不重编译）:
+#   scripts/publish-ofd-core.sh --dry-run --no-verify --offline
 #
 # 环境变量:
 #   CARGO_REGISTRY_TOKEN   crates.io token（若未登录则需要）
@@ -43,10 +49,12 @@ NO_VERIFY=0
 NO_TAG=0
 ALLOW_DIRTY=0
 ASSUME_YES=0
+OFFLINE=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run)     DRY_RUN=1 ;;
     --no-verify)   NO_VERIFY=1 ;;
+    --offline)     OFFLINE=1 ;;
     --no-tag)      NO_TAG=1 ;;
     --allow-dirty) ALLOW_DIRTY=1 ;;
     -y|--yes)      ASSUME_YES=1 ;;
@@ -55,6 +63,11 @@ while [[ $# -gt 0 ]]; do
   esac
   shift
 done
+
+# 真正发布必须联网上传，--offline 只对打包校验有意义。
+if [[ $OFFLINE -eq 1 && $DRY_RUN -eq 0 ]]; then
+  die "--offline 只能与 --dry-run 同用（真正发布需要访问 crates.io）"
+fi
 
 command -v cargo >/dev/null 2>&1 || die "未找到 cargo，请先安装 Rust 工具链"
 
@@ -75,9 +88,15 @@ if [[ $ALLOW_DIRTY -eq 0 ]]; then
 fi
 
 # ---- 检查该版本是否已发布 ----
-if curl -sf "https://crates.io/api/v1/crates/$CRATE/$VERSION" >/dev/null 2>&1; then
+if [[ $OFFLINE -eq 1 ]]; then
+  warn "已跳过 crates.io 版本占用检查（--offline）"
+elif curl -sf "https://crates.io/api/v1/crates/$CRATE/$VERSION" >/dev/null 2>&1; then
   die "$CRATE v$VERSION 已存在于 crates.io，请先在 $CRATE/Cargo.toml 中提升版本号"
 fi
+
+# ---- 离线开关（透传给所有 cargo 子命令）----
+OFFLINE_ARGS=()
+[[ $OFFLINE -eq 1 ]] && OFFLINE_ARGS+=(--offline)
 
 # ---- 本地检查 ----
 if [[ $NO_VERIFY -eq 0 ]]; then
@@ -86,24 +105,38 @@ if [[ $NO_VERIFY -eq 0 ]]; then
   ok "格式检查通过"
 
   info "cargo clippy"
-  cargo clippy -p "$CRATE" --all-features -- -D warnings || die "clippy 检查未通过"
+  cargo clippy "${OFFLINE_ARGS[@]}" -p "$CRATE" --all-features -- -D warnings \
+    || die "clippy 检查未通过"
   ok "clippy 通过"
 
   info "cargo test"
-  cargo test -p "$CRATE" --all-features || die "测试未通过"
+  cargo test "${OFFLINE_ARGS[@]}" -p "$CRATE" --all-features || die "测试未通过"
   ok "测试通过"
 else
-  warn "已跳过 fmt / clippy / test 检查"
+  warn "已跳过 fmt / clippy / test 检查，以及 cargo 的验证构建"
 fi
 
 # ---- 打包校验 ----
 # 显式指定 --registry crates-io：默认即 crates.io，且可避免本地
 # ~/.cargo/config.toml 中替换/重定义 crates-io 源时的发布报错。
-PUBLISH_ARGS=(-p "$CRATE" --registry crates-io)
+#
+# --locked：复用 workspace 的 Cargo.lock，避免 cargo 为解压出的独立包重新解析
+#   依赖图（否则每次都会打印 "Locking N packages"）。
+# --no-verify：跳过在 target/package/ 隔离目录中对全部依赖的从零编译，这是
+#   打包校验的耗时大头；隔离目录不共享 workspace 的编译缓存。
+PUBLISH_ARGS=(-p "$CRATE" --registry crates-io --locked "${OFFLINE_ARGS[@]}")
 [[ $ALLOW_DIRTY -eq 1 ]] && PUBLISH_ARGS+=(--allow-dirty)
+[[ $NO_VERIFY  -eq 1 ]] && PUBLISH_ARGS+=(--no-verify)
 
-info "cargo publish --dry-run"
-cargo publish "${PUBLISH_ARGS[@]}" --dry-run
+# `cargo publish --dry-run` 即使不上传也必定访问 registry，与 --offline 互斥；
+# 而它的实际工作（打包 + 验证构建）等价于 `cargo package`，后者支持离线。
+if [[ $OFFLINE -eq 1 ]]; then
+  info "cargo package（离线，等价于 publish --dry-run 的打包校验）"
+  cargo package "${PUBLISH_ARGS[@]}"
+else
+  info "cargo publish --dry-run"
+  cargo publish "${PUBLISH_ARGS[@]}" --dry-run
+fi
 ok "打包校验通过"
 
 if [[ $DRY_RUN -eq 1 ]]; then

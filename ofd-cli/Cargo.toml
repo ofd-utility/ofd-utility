@@ -11,7 +11,9 @@ name = "ofd-cli"
 path = "src/main.rs"
 
 [dependencies]
-ofd-core = { path = "../ofd-core" }
+# version 是发布到 crates.io 的硬性要求（纯 path 依赖会被拒绝）；本地构建仍走
+# path，version 只在发布后对下游生效。每次提升 ofd-core 版本需同步这里。
+ofd-core = { path = "../ofd-core", version = "0.3" }
 clap = { version = "4", features = ["derive"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 regex = "1"
